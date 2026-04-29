@@ -67,6 +67,28 @@ func (r *ArticleRepo) GetByID(ctx context.Context, id int64) (*Article, error) {
 	return a, err
 }
 
+// NeighboursOf returns the article IDs immediately older (prev) and newer
+// (next) than articleID within the same board, or 0 when there is no
+// neighbour on that side. "Older" / "newer" are by id (monotonic insert
+// order); this matches the user-visible "[ / ]" semantics in article view.
+func (r *ArticleRepo) NeighboursOf(ctx context.Context, boardID, articleID int64) (prev, next int64, err error) {
+	row := r.s.db.QueryRowContext(ctx,
+		`SELECT id FROM articles WHERE board_id = ? AND id < ? ORDER BY id DESC LIMIT 1`,
+		boardID, articleID,
+	)
+	if scanErr := row.Scan(&prev); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+		return 0, 0, scanErr
+	}
+	row = r.s.db.QueryRowContext(ctx,
+		`SELECT id FROM articles WHERE board_id = ? AND id > ? ORDER BY id ASC LIMIT 1`,
+		boardID, articleID,
+	)
+	if scanErr := row.Scan(&next); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+		return 0, 0, scanErr
+	}
+	return prev, next, nil
+}
+
 func (r *ArticleRepo) Create(ctx context.Context, boardID, authorID int64, authorUserID, title, body string) (*Article, error) {
 	r.s.writeMu.Lock()
 	defer r.s.writeMu.Unlock()

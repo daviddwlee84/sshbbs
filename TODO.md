@@ -22,11 +22,7 @@ for the maintenance workflow that agents should follow.
 Likely next batch — items you'd reach for if you sat down to work today.
 Mostly "PTT-feel polish" carried forward from the original plan's SHOULD HAVE bucket.
 
-- [ ] **[S] PTT-style extra hotkeys** — extend the table-driven keybindings to add `[`/`]` (prev/next item), `r` (reply on board view), `Q` (quit-to-menu). Tests in `internal/tui/screen_*_test.go` already follow the table pattern from h/l — add to existing tables, no new test files needed.
-- [ ] **[S] Article pagination** — long bodies need `g` (top), `G` (bottom), `PgUp`/`PgDn`. Scroll state already exists in `screen_article_view.go`; just bind keys.
-- [ ] **[S] Online-user list screen** — `chat.Broker.OnlineList()` is already implemented and covered by tests. Need a `screen_online.go` and a route from main menu (slot 3 currently is Quit — bump items).
-- [ ] **[M] Live broadcast of new articles** — mirror the `PushAddedMsg` pattern from Step 7 for new posts. `ArticleAddedMsg{BoardID, ArticleID, ...}` from `screen_post_compose.submit`; `screen_board_view` filters by `BoardID == m.board.ID`.
-- [ ] **[M] Mailbox 站內信** — distinct from water balloons (persistent threaded vs transient toast). New `mail` table + `screen_mail_*.go`. Cross-cutting with friends/blocklist (P2) but doesn't strictly depend on it.
+(P1 batch shipped 2026-04-29 — see Done.)
 
 ## P2
 
@@ -88,6 +84,11 @@ This moves the entry here using the dated `Done` syntax and re-validates.
 - ✅ [2026-04-29] [P1/L] Layered test suite (46 functions) — store repos + chat broker (concurrent-stress under `-race`) + TUI Update() tests; shared `internal/store/storetest` helper; `chat.Sender` interface refactor for mockability; strategy in `docs/testing.md`.
 - ✅ [2026-04-29] [P1/M] VHS demo recording — `scripts/record-demo.sh` + `scripts/demo.tape` produce `docs/demo.gif` / `.webm` embedded in README; fixed lipgloss color profile (`SetColorProfile(termenv.TrueColor)` in `tui/styles.go init`) so background colors render when server stdout is redirected.
 - ✅ [2026-04-29] [P1/S] CLAUDE.md authored — non-obvious architecture notes (SSH-user-as-login, ProgramHandler choice, Sender interface, broadcast-then-filter, writeMu discipline, embed scoping for migrations).
+- ✅ [2026-04-29] [P1/S] PTT-style extra hotkeys — `[`/`]` cursor aliases on board list / board view / online list / mail inbox; `[`/`]` sibling navigation on article view via new `ArticleRepo.NeighboursOf`; `Q` quit-to-menu on every list screen. `r` deliberately not bound on board view (PTT reserves it for article view's reply, deferred). Table-driven tests extended for every screen.
+- ✅ [2026-04-29] [P1/S] Article pagination `g`/`G` — top/bottom jumps in `screen_article_view`. `PgUp`/`PgDn` already worked via `b/pgup` and space/`pgdown` aliases. Helpers `bodyLineCount`/`viewportLines` keep `G` in sync with the View's render maths. Scroll-key table test covers all three cases (short body, long body, edge).
+- ✅ [2026-04-29] [P1/S] Online-user list screen — new `screen_online.go` reading `chat.Broker.OnlineList()` (sorted by user_id for stable order); main-menu slot 3 ("線上使用者 Online"), Quit bumped to slot 4. Enter/`l` opens water-balloon compose pre-filled with the cursored user. Test fixture registers fake sessions on a real broker.
+- ✅ [2026-04-29] [P1/M] Live broadcast of new articles — `ArticleAddedMsg{BoardID, ArticleID, ...}` mirrors `PushAddedMsg`. `screen_post_compose.submit` calls `broker.SendToAll(authorUID, ...)`; `screen_board_view` filters by `BoardID == m.board.ID` and re-fetches the article list from DB so ordering is canonical. Tests assert recording-broker receipt for non-author, exclusion of author, and DB persistence; receiver-side tests cover both same-board and cross-board cases.
+- ✅ [2026-04-29] [P1/M] Mailbox 站內信 — persistent threaded private messages distinct from water balloons. New migration `0003_add_mail.sql` with thread_id (back-filled to self for roots) + parent_id; `MailRepo` (Insert/ListInboxFor/ListThread/MarkRead/MarkAllReadFor/CountUnreadFor/GetByID) under `writeMu`. Three TUI screens (`screen_mail_inbox` / `_thread` / `_compose`) wired through `NavigateMsg{MailID, MailThreadID}`. Main menu slot 4 ("信箱 Mail"). 50× concurrent-insert race test guards the writeMu discipline.
 
 <!-- Prune older entries into CHANGELOG.md once prior-year items appear here
      or this section grows past ~20 entries. -->

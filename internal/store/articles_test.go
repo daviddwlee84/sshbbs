@@ -95,6 +95,52 @@ func TestArticles_ListByBoard_Limit(t *testing.T) {
 	}
 }
 
+func TestArticles_NeighboursOf(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	other := storetest.MustBoard(t, st, "ChitChat")
+
+	a, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "first", "")
+	b, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "second", "")
+	c, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "third", "")
+
+	// Middle article: both neighbours present.
+	prev, next, err := st.Articles().NeighboursOf(ctx, board.ID, b.ID)
+	if err != nil {
+		t.Fatalf("middle: %v", err)
+	}
+	if prev != a.ID || next != c.ID {
+		t.Errorf("middle: prev=%d next=%d, want prev=%d next=%d", prev, next, a.ID, c.ID)
+	}
+
+	// First article: prev=0, next=second.
+	prev, next, _ = st.Articles().NeighboursOf(ctx, board.ID, a.ID)
+	if prev != 0 || next != b.ID {
+		t.Errorf("first: prev=%d next=%d, want prev=0 next=%d", prev, next, b.ID)
+	}
+
+	// Last article: prev=second, next=0.
+	prev, next, _ = st.Articles().NeighboursOf(ctx, board.ID, c.ID)
+	if prev != b.ID || next != 0 {
+		t.Errorf("last: prev=%d next=%d, want prev=%d next=0", prev, next, b.ID)
+	}
+
+	// Wrong board: 0/0 even though the article exists elsewhere.
+	prev, next, _ = st.Articles().NeighboursOf(ctx, other.ID, b.ID)
+	if prev != 0 || next != 0 {
+		t.Errorf("wrong board: prev=%d next=%d, want 0/0", prev, next)
+	}
+
+	// Single-article board: both 0. Use the empty `other` board for this.
+	d, _ := st.Articles().Create(ctx, other.ID, user.ID, user.UserID, "alone", "")
+	prev, next, _ = st.Articles().NeighboursOf(ctx, other.ID, d.ID)
+	if prev != 0 || next != 0 {
+		t.Errorf("single: prev=%d next=%d, want 0/0", prev, next)
+	}
+}
+
 func TestArticles_BoardIsolation(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)

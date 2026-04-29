@@ -35,11 +35,13 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc", "backspace", "left", "h":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
-		case "up", "k":
+		case "Q":
+			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+		case "up", "k", "[":
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down", "j", "]":
 			if m.cursor < len(m.boards)-1 {
 				m.cursor++
 			}

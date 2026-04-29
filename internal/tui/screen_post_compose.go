@@ -111,7 +111,7 @@ func (m postComposeModel) submit() (tea.Model, tea.Cmd) {
 	}
 	ctx := context.Background()
 	u := m.deps.User
-	_, err := m.deps.Store.Articles().Create(ctx, m.boardID, u.ID, u.UserID, title, body)
+	art, err := m.deps.Store.Articles().Create(ctx, m.boardID, u.ID, u.UserID, title, body)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -119,6 +119,16 @@ func (m postComposeModel) submit() (tea.Model, tea.Cmd) {
 	if err := m.deps.Store.Users().IncrementPosts(ctx, u.ID); err != nil {
 		m.err = err.Error()
 		return m, nil
+	}
+	// Broadcast to other live sessions; recipients filter by BoardID and
+	// re-fetch the canonical list (mirrors the PushAddedMsg pattern).
+	if m.deps.Broker != nil {
+		m.deps.Broker.SendToAll(u.ID, ArticleAddedMsg{
+			BoardID:      m.boardID,
+			ArticleID:    art.ID,
+			AuthorUserID: u.UserID,
+			Title:        art.Title,
+		})
 	}
 	return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardView, BoardID: m.boardID} }
 }

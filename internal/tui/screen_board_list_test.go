@@ -70,6 +70,34 @@ func TestBoardList_ForwardKeys(t *testing.T) {
 	}
 }
 
+// `[` and `]` are PTT-style aliases for k/j (cursor up/down).
+func TestBoardList_BracketCursorAliases(t *testing.T) {
+	m, _ := newBoardListFixture(t)
+	if m.cursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", m.cursor)
+	}
+	model, _ := m.Update(keyOf("]"))
+	m = model.(boardListModel)
+	if m.cursor != 1 {
+		t.Errorf("after ]: cursor = %d, want 1", m.cursor)
+	}
+	model, _ = m.Update(keyOf("["))
+	m = model.(boardListModel)
+	if m.cursor != 0 {
+		t.Errorf("after [: cursor = %d, want 0", m.cursor)
+	}
+}
+
+// `Q` quits the list back to main menu.
+func TestBoardList_QuitToMenu(t *testing.T) {
+	m, _ := newBoardListFixture(t)
+	_, cmd := m.Update(keyOf("Q"))
+	nav := runCmd(cmd).(NavigateMsg)
+	if nav.To != ScreenMainMenu {
+		t.Errorf("To = %v, want ScreenMainMenu", nav.To)
+	}
+}
+
 func TestBoardList_CursorTracksOpen(t *testing.T) {
 	m, _ := newBoardListFixture(t)
 	// Move cursor to "Test" (index 1).

@@ -123,6 +123,14 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newWBInboxModel(m.deps)
 	case ScreenWBCompose:
 		sub = newWBComposeModel(m.deps, n.Recipient)
+	case ScreenOnline:
+		sub = newOnlineModel(m.deps)
+	case ScreenMailInbox:
+		sub = newMailInboxModel(m.deps)
+	case ScreenMailThread:
+		sub = newMailThreadModel(m.deps, n.MailThreadID)
+	case ScreenMailCompose:
+		sub = newMailComposeModel(m.deps, n.Recipient, n.MailID)
 	default:
 		// Unknown screen — leave sub untouched. Later steps add cases.
 		return m, nil

@@ -114,6 +114,8 @@ func TestMainMenu_NumericShortcuts(t *testing.T) {
 	}{
 		{"1", ScreenBoardList},
 		{"2", ScreenWBInbox},
+		{"3", ScreenOnline},
+		{"4", ScreenMailInbox},
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {
@@ -131,10 +133,11 @@ func TestMainMenu_NumericShortcuts(t *testing.T) {
 	}
 }
 
-// Quit shortcut: '3' jumps to "Quit" and emits tea.Quit, not a NavigateMsg.
+// Quit shortcut: '5' jumps to "Quit" (slots 1-4 are Boards/WB/Online/Mail)
+// and emits tea.Quit, not a NavigateMsg.
 func TestMainMenu_QuitShortcut(t *testing.T) {
 	m, _ := newMainMenuFixture()
-	_, cmd := updateMM(m, keyOf("3"))
+	_, cmd := updateMM(m, keyOf("5"))
 	msg := runCmd(cmd)
 	if _, isQuit := msg.(tea.QuitMsg); !isQuit {
 		t.Errorf("got %T, want tea.QuitMsg", msg)

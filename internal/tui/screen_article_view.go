@@ -76,6 +76,8 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				boardID = m.article.BoardID
 			}
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardView, BoardID: boardID} }
+		case "Q":
+			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
 		case "up", "k":
 			if m.scroll > 0 {
 				m.scroll--
@@ -86,6 +88,32 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scroll = max(0, m.scroll-10)
 		case "pgdown", " ":
 			m.scroll += 10
+		case "g":
+			m.scroll = 0
+		case "G":
+			m.scroll = max(0, m.bodyLineCount()-m.viewportLines())
+		case "[":
+			if m.article == nil {
+				return m, nil
+			}
+			prev, _, err := m.deps.Store.Articles().NeighboursOf(context.Background(), m.article.BoardID, m.article.ID)
+			if err != nil || prev == 0 {
+				return m, nil
+			}
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenArticleView, ArticleID: prev, BoardID: m.article.BoardID}
+			}
+		case "]":
+			if m.article == nil {
+				return m, nil
+			}
+			_, next, err := m.deps.Store.Articles().NeighboursOf(context.Background(), m.article.BoardID, m.article.ID)
+			if err != nil || next == 0 {
+				return m, nil
+			}
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenArticleView, ArticleID: next, BoardID: m.article.BoardID}
+			}
 		case "+":
 			return m.openPush(store.PushKindPush), nil
 		case "-":
@@ -95,6 +123,21 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// bodyLineCount returns the number of lines View will render for the
+// loaded article (matches strings.Split(body, "\n") used in View).
+func (m articleViewModel) bodyLineCount() int {
+	if m.article == nil {
+		return 0
+	}
+	return len(strings.Split(m.article.Body, "\n"))
+}
+
+// viewportLines mirrors the maxLines computation in View so g/G/PgDn
+// agree on how many lines fit on screen.
+func (m articleViewModel) viewportLines() int {
+	return max(m.height-16, 5)
 }
 
 func (m articleViewModel) openPush(k store.PushKind) tea.Model {

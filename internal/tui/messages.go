@@ -11,15 +11,21 @@ const (
 	ScreenPostCompose
 	ScreenWBInbox
 	ScreenWBCompose
+	ScreenOnline
+	ScreenMailInbox
+	ScreenMailThread
+	ScreenMailCompose
 )
 
 // NavigateMsg is emitted by sub-screens to ask the Root to swap screens.
 // Optional fields carry context the destination screen needs.
 type NavigateMsg struct {
-	To        Screen
-	BoardID   int64
-	ArticleID int64
-	Recipient string // for ScreenWBCompose: prefilled recipient userid
+	To           Screen
+	BoardID      int64
+	ArticleID    int64
+	Recipient    string // for ScreenWBCompose / ScreenMailCompose: prefilled recipient userid
+	MailID       int64  // for ScreenMailCompose: parent mail id when replying
+	MailThreadID int64  // for ScreenMailThread: which thread to open
 }
 
 // ErrorMsg surfaces an error as a transient toast.
@@ -41,4 +47,25 @@ type PushAddedMsg struct {
 	UserUserID string
 	Kind       string
 	Body       string
+}
+
+// MailIncomingMsg notifies the recipient that a new mail has arrived.
+// Unlike WBIncomingMsg it does NOT auto-toast — mail is asynchronous; the
+// open mail inbox can choose to refresh, and the main menu reads the unread
+// counter from DB.
+type MailIncomingMsg struct {
+	ID         int64
+	ThreadID   int64
+	FromUserID string
+	Subject    string
+}
+
+// ArticleAddedMsg is broadcast by the chat broker when a new article is
+// posted. Board-view models filter by BoardID and re-fetch the article
+// list from DB so timestamps and ordering reflect canonical state.
+type ArticleAddedMsg struct {
+	BoardID      int64
+	ArticleID    int64
+	AuthorUserID string
+	Title        string
 }

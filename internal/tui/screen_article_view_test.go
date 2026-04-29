@@ -79,6 +79,111 @@ func TestArticleView_OpenPushKinds(t *testing.T) {
 	}
 }
 
+// `Q` from article view jumps straight to main menu.
+func TestArticleView_QuitToMenu(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	_, cmd := m.Update(keyOf("Q"))
+	nav := runCmd(cmd).(NavigateMsg)
+	if nav.To != ScreenMainMenu {
+		t.Errorf("To = %v, want ScreenMainMenu", nav.To)
+	}
+}
+
+// `g` / `G` jump scroll to top / bottom of the body. Body has N lines;
+// after `G`, scroll equals the canonical "show last viewport" offset.
+func TestArticleView_ScrollGGoToTopBottom(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	// Force a known terminal size so viewportLines is deterministic.
+	m.height = 24 // viewportLines() = max(24-16, 5) = 8
+	m.scroll = 1
+
+	model, _ := m.Update(keyOf("g"))
+	got := model.(articleViewModel)
+	if got.scroll != 0 {
+		t.Errorf("after g: scroll = %d, want 0", got.scroll)
+	}
+
+	got.height = 24
+	model, _ = got.Update(keyOf("G"))
+	got = model.(articleViewModel)
+	// fixture has 3 body lines, viewport=8 → max(0, 3-8) = 0
+	if got.scroll != 0 {
+		t.Errorf("after G (3 lines, viewport=8): scroll = %d, want 0", got.scroll)
+	}
+
+	// Long body → G should land on totalLines - viewportLines.
+	st := deps.Store
+	user := deps.User
+	long := ""
+	for i := 0; i < 30; i++ {
+		long += "line\n"
+	}
+	a, err := st.Articles().Create(context.Background(), art.BoardID, user.ID, user.UserID, "long", long)
+	if err != nil {
+		t.Fatalf("create long: %v", err)
+	}
+	mLong := newArticleViewModel(deps, a.ID)
+	mLong.height = 24
+	model, _ = mLong.Update(keyOf("G"))
+	gotLong := model.(articleViewModel)
+	wantScroll := gotLong.bodyLineCount() - gotLong.viewportLines()
+	if gotLong.scroll != wantScroll {
+		t.Errorf("after G (long body): scroll = %d, want %d", gotLong.scroll, wantScroll)
+	}
+}
+
+// `[` and `]` navigate to the prev/next sibling article in the same board.
+// At the edges (no neighbour), the keys are no-ops (no NavigateMsg emitted).
+func TestArticleView_BracketSiblingNavigation(t *testing.T) {
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	ctx := context.Background()
+	a, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "first", "")
+	b, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "second", "")
+	c, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "third", "")
+	deps := Deps{Store: st, User: user, Broker: chat.NewBroker()}
+
+	// Middle article: `[` → first, `]` → third.
+	m := newArticleViewModel(deps, b.ID)
+	_, cmd := m.Update(keyOf("["))
+	nav := runCmd(cmd).(NavigateMsg)
+	if nav.To != ScreenArticleView || nav.ArticleID != a.ID {
+		t.Errorf("[ from middle: nav = %+v, want ArticleID=%d", nav, a.ID)
+	}
+	_, cmd = m.Update(keyOf("]"))
+	nav = runCmd(cmd).(NavigateMsg)
+	if nav.To != ScreenArticleView || nav.ArticleID != c.ID {
+		t.Errorf("] from middle: nav = %+v, want ArticleID=%d", nav, c.ID)
+	}
+
+	// First article: `[` is a no-op; `]` → second.
+	m = newArticleViewModel(deps, a.ID)
+	_, cmd = m.Update(keyOf("["))
+	if runCmd(cmd) != nil {
+		t.Errorf("[ from first should be no-op")
+	}
+	_, cmd = m.Update(keyOf("]"))
+	nav = runCmd(cmd).(NavigateMsg)
+	if nav.ArticleID != b.ID {
+		t.Errorf("] from first: ArticleID = %d, want %d", nav.ArticleID, b.ID)
+	}
+
+	// Last article: `]` is a no-op; `[` → second.
+	m = newArticleViewModel(deps, c.ID)
+	_, cmd = m.Update(keyOf("]"))
+	if runCmd(cmd) != nil {
+		t.Errorf("] from last should be no-op")
+	}
+	_, cmd = m.Update(keyOf("["))
+	nav = runCmd(cmd).(NavigateMsg)
+	if nav.ArticleID != b.ID {
+		t.Errorf("[ from last: ArticleID = %d, want %d", nav.ArticleID, b.ID)
+	}
+}
+
 // PushAddedMsg for a different article must NOT mutate this view —
 // guards against the broadcast-to-all + filter-by-id pattern from Step 7.
 func TestArticleView_IgnoresUnrelatedPush(t *testing.T) {

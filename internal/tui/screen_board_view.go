@@ -37,15 +37,25 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case ArticleAddedMsg:
+		if m.board != nil && msg.BoardID == m.board.ID {
+			ctx := context.Background()
+			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
+				m.articles = arts
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "backspace", "left", "h":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardList} }
-		case "up", "k":
+		case "Q":
+			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+		case "up", "k", "[":
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down", "j", "]":
 			if m.cursor < len(m.articles)-1 {
 				m.cursor++
 			}

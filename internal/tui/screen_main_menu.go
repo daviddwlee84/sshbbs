@@ -25,6 +25,8 @@ func newMainMenuModel(deps Deps) mainMenuModel {
 		items: []menuItem{
 			{label: "看板列表 Boards", hint: "browse and read articles", to: ScreenBoardList},
 			{label: "水球 Water Balloons", hint: "private messages with online users", to: ScreenWBInbox},
+			{label: "線上使用者 Online", hint: "see who's logged in", to: ScreenOnline},
+			{label: "信箱 Mail", hint: "persistent threaded mail", to: ScreenMailInbox},
 			{label: "離線 Quit", hint: "disconnect", to: -1},
 		},
 	}
@@ -53,7 +55,7 @@ func (m mainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, func() tea.Msg { return NavigateMsg{To: it.to} }
-		case "1", "2", "3":
+		case "1", "2", "3", "4", "5":
 			idx := int(k.String()[0] - '1')
 			if idx < len(m.items) {
 				it := m.items[idx]
@@ -107,7 +109,7 @@ func (m mainMenuModel) View() string {
 	}
 
 	b.WriteString("\n  ")
-	b.WriteString(StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-3 jump · q quit"))
+	b.WriteString(StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-5 jump · q quit"))
 	b.WriteString("\n")
 	return b.String()
 }
