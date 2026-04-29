@@ -5,7 +5,7 @@ DB       := data/bbs.db
 MIGDIR   := internal/store/migrations
 HOSTKEY  := .ssh/host_ed25519
 
-.PHONY: build run hostkey db-reset test tidy fmt vet clean
+.PHONY: build run hostkey db-reset test test-race cover demo tidy fmt vet clean compose-up compose-down docker-build
 
 build:
 	go build -o $(BIN) $(PKG)
@@ -48,3 +48,12 @@ vet:
 clean:
 	rm -f $(BIN)
 	rm -rf dist/
+
+compose-up:
+	docker compose up --build -d
+
+compose-down:
+	docker compose down
+
+docker-build:
+	docker build -t sshbbs:dev .

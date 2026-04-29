@@ -50,4 +50,7 @@ Add new entries here as you create them. Keep alphabetical.
 
 | Slug | Status | TODO entry |
 |---|---|---|
-| (none yet) | | |
+| [external-chat-broker](external-chat-broker.md) | P? — needs spike | `[?/L] External chat broker (Redis pub/sub) for zero-downtime` |
+| [goose-migration-switch](goose-migration-switch.md) | P3 — gated on M2 trigger | `[M] Switch migration runner to pressly/goose` |
+| [postgres-migration-plan](postgres-migration-plan.md) | P? — gated on M4 trigger | `[?/XL] Postgres migration plan` |
+| [ptt-import-spike](ptt-import-spike.md) | P? — needs spike | `[?/L] Article import from real PTT .DIR dumps` |

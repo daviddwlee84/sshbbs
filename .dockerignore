@@ -1,0 +1,14 @@
+.git/
+.github/
+.specstory/
+.claude/
+data/
+.ssh/
+sshbbs
+*.test
+*.out
+docs/demo.gif
+docs/demo.webm
+backlog/
+pitfalls/
+dist/

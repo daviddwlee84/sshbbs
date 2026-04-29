@@ -47,12 +47,17 @@ Someday / nice-to-have.
 - [ ] **[L] Migrate query layer to `sqlc`** — once the schema stops churning. Buys type-safe queries and removes the by-hand `scanX` helpers in repos.
 - [ ] **[L] Web read-only mirror** — read-only HTTP frontend so non-SSH users can browse / link to articles. Out of scope until the SSH side feels feature-complete.
 - [ ] **[M] Prometheus metrics endpoint** — `/metrics` HTTP listener on a separate port, exposing per-board / per-user counters from the broker + DB. Premature without an actual deployment to monitor.
+- [ ] **[S] GitHub Actions CI: test-race + vet + staticcheck on PR** — gates M2 entry per `docs/operations/00_overview.md`. ~40-line workflow under `.github/workflows/`.
+- [ ] **[M] Migrate config from CLI flags to env vars (M2 prep)** — additive: env vars override flags. Touches `cmd/sshbbs/main.go:22-26`. See `docs/operations/01_environments.md`.
+- [ ] **[M] Switch migration runner to `pressly/goose`** — gated on M2 entry (reversibility need). Keep the `fs.FS` / `go:embed` interface. → [research](backlog/goose-migration-switch.md)
 
 ## P?
 
 Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
 
 - [ ] **[?/L] Article import from real PTT `.DIR` dumps** — needs spike on `Ptt-official-app/go-bbs` library quality + Big5↔UTF-8 transcoding fidelity before committing. → [research](backlog/ptt-import-spike.md)
+- [ ] **[?/L] External chat broker (Redis pub/sub) for zero-downtime** — decouples `chat.Broker` from process memory so live presence + in-flight messages survive restart. Spike on whether `SO_REUSEPORT` socket-handoff is cheaper. → [research](backlog/external-chat-broker.md)
+- [ ] **[?/XL] Postgres migration plan** — only if M4 ever triggers (single-box CPU or write throughput sustained at 70%). Captures the SQLite-WAL → Postgres delta + the two-writer constraint that forces it. → [research](backlog/postgres-migration-plan.md)
 
 ## Done
 

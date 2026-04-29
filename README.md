@@ -34,6 +34,23 @@ ssh new@localhost -p 2222     # password is ignored — fill the in-TUI form
 ssh alice@localhost -p 2222   # use the password you registered with
 ```
 
+## Local dev with Docker
+
+If you'd rather not install Go locally:
+
+```bash
+make compose-up         # builds, generates a host key into a named volume, runs on :2222
+ssh new@localhost -p 2222
+make compose-down
+```
+
+The `bbs-data` and `bbs-keys` volumes persist across restarts so accounts
+and the host key survive `compose-down`/`compose-up`. See
+[`docs/operations/04_docker.md`](docs/operations/04_docker.md) for what the
+multi-stage build and `hostkey-init` service do, and a warning about
+volume drivers that don't honour SQLite's filesystem locks (don't put
+`bbs-data` on NFS).
+
 Inside the TUI:
 
 - `↑`/`↓` or `j`/`k` to move, `Enter` to select
