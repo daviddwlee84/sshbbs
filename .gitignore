@@ -1,0 +1,25 @@
+# Build artifacts
+/sshbbs
+/dist/
+*.test
+*.out
+
+# Runtime data
+/data/*
+!/data/.gitkeep
+
+# SSH host keys (regenerate per environment)
+/.ssh/*
+!/.ssh/.gitkeep
+
+# SQLite scratch files
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
