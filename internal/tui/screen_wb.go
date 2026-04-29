@@ -45,7 +45,7 @@ func (m wbInboxModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "backspace":
+		case "esc", "backspace", "left", "h":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
 		case "up", "k":
 			if m.cursor > 0 {
@@ -57,7 +57,7 @@ func (m wbInboxModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "c":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenWBCompose} }
-		case "r":
+		case "r", "enter", " ", "right", "l":
 			if len(m.items) == 0 {
 				return m, nil
 			}
@@ -82,7 +82,7 @@ func (m wbInboxModel) View() string {
 	}
 	if len(m.items) == 0 {
 		b.WriteString("  " + StyleDim.Render("(no messages — press c to compose)") + "\n")
-		b.WriteString("\n  " + StyleHelp.Render("c compose · Esc back"))
+		b.WriteString("\n  " + StyleHelp.Render("c compose · Esc/←/h back"))
 		return b.String()
 	}
 
@@ -118,7 +118,7 @@ func (m wbInboxModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ or j/k · c compose · r reply · Esc back"))
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l/r reply · c compose · Esc/←/h back"))
 	b.WriteString("\n")
 	return b.String()
 }

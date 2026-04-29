@@ -27,6 +27,12 @@ db-reset:
 test:
 	go test ./...
 
+test-race:
+	go test -race ./...
+
+cover:
+	go test -cover ./...
+
 tidy:
 	go mod tidy
 

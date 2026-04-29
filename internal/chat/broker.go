@@ -10,13 +10,20 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Sender is the minimal slice of *tea.Program the broker actually needs.
+// Decoupling lets tests substitute a recording fake without spinning up a
+// real bubbletea program.
+type Sender interface {
+	Send(tea.Msg)
+}
+
 // Session is one live SSH connection. The same user may have multiple
 // Sessions (PTT calls this "雙開"); the broker keeps them all and
 // broadcasts to each.
 type Session struct {
 	UserID    int64
 	UserIDStr string
-	Program   *tea.Program
+	Program   Sender
 }
 
 // OnlineUser is the externally-visible view of a logged-in user.
@@ -42,9 +49,9 @@ func (b *Broker) Register(s *Session) {
 }
 
 // Unregister removes a single session for the given user (matched by
-// program pointer). If it was the last session, the user disappears from
+// Sender identity). If it was the last session, the user disappears from
 // the online list.
-func (b *Broker) Unregister(userID int64, prog *tea.Program) {
+func (b *Broker) Unregister(userID int64, prog Sender) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	list := b.sessions[userID]

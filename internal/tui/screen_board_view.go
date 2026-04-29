@@ -39,7 +39,7 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "backspace":
+		case "esc", "backspace", "left", "h":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardList} }
 		case "up", "k":
 			if m.cursor > 0 {
@@ -91,7 +91,7 @@ func (m boardViewModel) View() string {
 	}
 	if len(m.articles) == 0 {
 		b.WriteString("  " + StyleDim.Render("(no articles yet — press p to write one)") + "\n")
-		b.WriteString("\n  " + StyleHelp.Render("p post · Esc back · Ctrl+C disconnect"))
+		b.WriteString("\n  " + StyleHelp.Render("p post · Esc/←/h back · Ctrl+C disconnect"))
 		return b.String()
 	}
 
@@ -135,7 +135,7 @@ func (m boardViewModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ or j/k · Enter open · p post · Esc back · Ctrl+C disconnect"))
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l open · p post · Esc/←/h back · Ctrl+C disconnect"))
 	b.WriteString("\n")
 	return b.String()
 }

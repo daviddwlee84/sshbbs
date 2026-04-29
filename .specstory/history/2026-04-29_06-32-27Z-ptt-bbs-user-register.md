@@ -11925,3 +11925,2803 @@ Scan transcript for common secret patterns
 --- scan done ---
 ```
 </details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:38:50Z)**_
+
+No secrets in the transcript. Staging, committing, then verifying.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:38:51Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage all source + transcript
+
+`git add .gitignore Makefile README.md go.mod go.sum cmd/ internal/ docs/ scripts/ .ssh/.gitkeep data/.gitkeep .specstory/ && git status --short`
+
+```text
+A  .gitignore
+M  .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+A  .ssh/.gitkeep
+A  Makefile
+A  README.md
+A  cmd/sshbbs/main.go
+A  data/.gitkeep
+A  docs/ptt_trace_code/00_overview.md
+A  docs/ptt_trace_code/01_userec.md
+A  docs/ptt_trace_code/02_boardheader.md
+A  docs/ptt_trace_code/03_fileheader_dir.md
+A  docs/ptt_trace_code/04_push_comment.md
+A  docs/ptt_trace_code/05_water_balloon.md
+A  docs/ptt_trace_code/06_session_userinfo.md
+A  go.mod
+A  go.sum
+A  internal/auth/auth.go
+A  internal/auth/auth_test.go
+A  internal/chat/broker.go
+A  internal/server/auth_middleware.go
+A  internal/server/server.go
+A  internal/store/articles.go
+A  internal/store/boards.go
+A  internal/store/migrate.go
+A  internal/store/migrations/0001_init.sql
+A  internal/store/migrations/0002_seed_boards.sql
+A  internal/store/pushes.go
+A  internal/store/store.go
+A  internal/store/users.go
+A  internal/store/waterballoons.go
+A  internal/tui/messages.go
+A  internal/tui/root.go
+A  internal/tui/runewidth.go
+A  internal/tui/screen_article_view.go
+A  internal/tui/screen_board_list.go
+A  internal/tui/screen_board_view.go
+A  internal/tui/screen_main_menu.go
+A  internal/tui/screen_post_compose.go
+A  internal/tui/screen_register.go
+A  internal/tui/screen_wb.go
+A  internal/tui/styles.go
+A  internal/version/version.go
+A  scripts/gen-hostkey.sh
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:39:02Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Create the commit
+
+```bash
+git commit -m "$(cat <<'EOF'
+Implement P0 PTT-style SSH BBS over wish + bubbletea
+
+MUST-HAVE feature set: register/login over SSH (bcrypt), default boards
+(Welcome/Test/ChitChat), read & post articles with CJK width handling,
+推/噓/→ pushes with live broadcast to other viewers, and 水球 water
+balloons with offline persistence + on-reconnect replay. Persistence is
+SQLite (modernc.org/sqlite, no CGO), live presence is an in-memory broker
+hooked into wish's bubbletea ProgramHandler. docs/ptt_trace_code/ traces
+each pttbbs concept to our schema and explains intentional simplifications.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" && echo "--- post-commit status ---" && git status
+```
+
+```text
+[main d4f7369] Implement P0 PTT-style SSH BBS over wish + bubbletea
+ 43 files changed, 15084 insertions(+), 7 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 .ssh/.gitkeep
+ create mode 100644 Makefile
+ create mode 100644 README.md
+ create mode 100644 cmd/sshbbs/main.go
+ create mode 100644 data/.gitkeep
+ create mode 100644 docs/ptt_trace_code/00_overview.md
+ create mode 100644 docs/ptt_trace_code/01_userec.md
+ create mode 100644 docs/ptt_trace_code/02_boardheader.md
+ create mode 100644 docs/ptt_trace_code/03_fileheader_dir.md
+ create mode 100644 docs/ptt_trace_code/04_push_comment.md
+ create mode 100644 docs/ptt_trace_code/05_water_balloon.md
+ create mode 100644 docs/ptt_trace_code/06_session_userinfo.md
+ create mode 100644 go.mod
+ create mode 100644 go.sum
+ create mode 100644 internal/auth/auth.go
+ create mode 100644 internal/auth/auth_test.go
+ create mode 100644 internal/chat/broker.go
+ create mode 100644 internal/server/auth_middleware.go
+ create mode 100644 internal/server/server.go
+ create mode 100644 internal/store/articles.go
+ create mode 100644 internal/store/boards.go
+ create mode 100644 internal/store/migrate.go
+ create mode 100644 internal/store/migrations/0001_init.sql
+ create mode 100644 internal/store/migrations/0002_seed_boards.sql
+ create mode 100644 internal/store/pushes.go
+ create mode 100644 internal/store/store.go
+ create mode 100644 internal/store/users.go
+ create mode 100644 internal/store/waterballoons.go
+ create mode 100644 internal/tui/messages.go
+ create mode 100644 internal/tui/root.go
+ create mode 100644 internal/tui/runewidth.go
+ create mode 100644 internal/tui/screen_article_view.go
+ create mode 100644 internal/tui/screen_board_list.go
+ create mode 100644 internal/tui/screen_board_view.go
+ create mode 100644 internal/tui/screen_main_menu.go
+ create mode 100644 internal/tui/screen_post_compose.go
+ create mode 100644 internal/tui/screen_register.go
+ create mode 100644 internal/tui/screen_wb.go
+ create mode 100644 internal/tui/styles.go
+ create mode 100644 internal/version/version.go
+ create mode 100755 scripts/gen-hostkey.sh
+--- post-commit status ---
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:39:11Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:39:12Z)**_
+
+Committed `d4f7369` with 43 files / +15084 lines. The transcript got an extra append from this commit-session itself (SpecStory writes live), so it shows modified again — leave or recommit at your discretion.
+
+---
+
+_**User (2026-04-29 07:41:28Z)**_
+
+1. 優化navigation體驗 (添加left (h) as back, right (l) as enter; 目前好像只有一部分介面能這麼操作)
+2. 添加unit test 設計一下如何針對現有功能進行test 然後編寫並確定能跑通
+
+以下分別是ChatGPT與Claude的建議
+
+```
+簡短回答：用 Go 原生 `testing` + Charm 自家提供的兩個 helper（`wish/testsession` 和 `x/exp/teatest`），分層測試。沒有真的「SSH 版 Playwright」這種東西——因為 TUI 沒有 DOM，能斷言的就是 byte stream / ANSI escape sequence——但 Charm 自己已經把這套組合包好了。
+
+## 分層思路
+
+**Layer 1：純邏輯單元測試**
+你的 model state、command parsing、業務邏輯這些不依賴 PTY 的部分，普通 `go test` 就夠了，跟其他 Go 專案一樣。
+
+**Layer 2：Bubble Tea Model 測試（用 `teatest`）**
+
+如果你的 wish app 有掛 `bubbletea.Middleware`（多半會），這層最重要。Charm 官方提供 `github.com/charmbracelet/x/exp/teatest`，可以：
+- `Send()` 模擬鍵盤訊息
+- `Type()` 打字串
+- `WaitFor()` 等畫面出現某個內容
+- `RequireEqualOutput()` 對 golden file 做 snapshot 比對（類似 Jest 的 snapshot test）
+
+```go
+func TestApp(t *testing.T) {
+    m := initialModel()
+    tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
+    
+    tm.Type("hello")
+    tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+    
+    teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+        return bytes.Contains(bts, []byte("expected output"))
+    }, teatest.WithDuration(3*time.Second))
+    
+    tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
+    tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
+    
+    out, _ := io.ReadAll(tm.FinalOutput(t))
+    teatest.RequireEqualOutput(t, out)  // 比對 testdata/TestApp.golden
+}
+```
+
+跑 `go test -update` 第一次會生成 golden，之後就鎖住了。
+
+⚠️ 兩個常見坑：
+1. CI 跟本地的 color profile 不同會 diff，在 `init()` 裡強制 `lipgloss.SetColorProfile(termenv.Ascii)`
+2. 加 `.gitattributes` 讓 git 別碰 golden 檔的行尾：`testdata/*.golden -text`
+
+**Layer 3：SSH 整合測試（用 `wish/testsession`）**
+
+這是 wish 自己 repo 裡測自己用的東西，公開可用。它幫你起一個 in-process 的 SSH server，回一個已經連上的 client session，你直接餵 stdin 讀 stdout：
+
+```go
+import "github.com/charmbracelet/wish/testsession"
+
+func TestSSHHandler(t *testing.T) {
+    sess := testsession.New(t, &ssh.Server{
+        Handler: yourHandler,  // 真的 wish handler
+    }, nil)
+    
+    var stdout bytes.Buffer
+    sess.Stdout = &stdout
+    if err := sess.Run(""); err != nil {
+        t.Fatal(err)
+    }
+    // 對 stdout.String() 做斷言
+}
+```
+
+這層驗證 middleware chain、auth、PTY 設定這些 SSH 層的東西真的有接好。
+
+**Layer 4（選用）：真 E2E**
+
+如果真的要從外面 ssh 進去打，用 `github.com/Netflix/go-expect` 或 `golang.org/x/crypto/ssh` 自己起 client。但通常 Layer 2 + 3 已經能 cover 95% 的 regression，E2E 留給冒煙測試或重要 happy path。
+
+## 給你的建議
+
+依照你的 speckit 風格——`specify → plan → tasks → implement` 那種結構化流程——測試也建議照同一個思路分清楚：
+
+| 測什麼 | 用什麼 |
+|---|---|
+| 業務邏輯、reducer | `testing` |
+| TUI 互動、畫面 | `teatest` + golden files |
+| SSH wiring、middleware | `wish/testsession` |
+| 真實連線冒煙 | `go-expect` 或自製 ssh client |
+
+不必執著於「SSH Playwright」——TUI 測試的本質是 byte stream 比對，golden file snapshot 已經是這個領域的最佳實踐了。Playwright 之所以強是因為瀏覽器有 DOM 可查詢，終端機沒有這個東西。
+
+如果要我推一個入口，先把 `teatest` 跑起來，那是 ROI 最高的——大部分 regression 都是 view 邏輯壞掉，golden file 抓得很準。
+```
+
+```
+可以把它想成 「SSH App = Go backend + terminal UI」，所以測試不要只靠一種工具。比較推薦這樣分層：
+
+推薦結論
+
+核心邏輯：Go unit test。
+SSH/Wish middleware：Go integration test。
+Bubble Tea TUI：用 Bubble Tea/teatest。
+完整黑盒互動：再加 expect-style test，不太像 Playwright，而比較像 expect / PTY automation。
+
+Wish 本身是 Go library，底層用 gliderlabs/ssh 實作 SSH server，不需要 OpenSSH server；它還內建 testsession package，專門給 SSH session 測試用。Wish 的 package 文件也列出 testsession：「provides utilities to test SSH sessions」。 ￼
+
+⸻
+
+1. 最底層：普通 Go unit test
+
+這層測：
+
+auth 判斷
+command parsing
+permission / ACL
+business logic
+storage
+service layer
+Bubble Tea model.Update 邏輯
+
+這些不要真的開 SSH。最好把 Wish handler 做薄一點：
+
+type AppService interface {
+    HandleCommand(ctx context.Context, user string, args []string) (string, error)
+}
+
+然後 Wish session handler 只負責：
+
+ssh.Session -> user / command / pty -> service -> output
+
+這樣大部分測試就是普通：
+
+go test ./...
+
+⸻
+
+2. Wish / SSH integration test：用 Go + testsession
+
+Wish 的 testsession 提供 Listen(tb, srv), New(tb, srv, cfg), NewClientSession(tb, addr, config) 這類工具，可以在 test 裡開一個 local SSH server，然後用 Go SSH client 連進去測。 ￼
+
+概念上會像這樣：
+
+package app_test
+import (
+    "bytes"
+    "testing"
+    "time"
+    wish "charm.land/wish/v2"
+    "charm.land/wish/v2/testsession"
+    gossh "golang.org/x/crypto/ssh"
+)
+func TestSSHCommand(t *testing.T) {
+    t.Parallel()
+    srv, err := wish.NewServer(
+        wish.WithAddress("127.0.0.1:0"),
+        // wish.WithMiddleware(...),
+    )
+    if err != nil {
+        t.Fatalf("new server: %v", err)
+    }
+    addr := testsession.Listen(t, srv)
+    cfg := &gossh.ClientConfig{
+        User:            "test-user",
+        Auth:            []gossh.AuthMethod{gossh.Password("test")},
+        HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+        Timeout:         3 * time.Second,
+    }
+    sess, err := testsession.NewClientSession(t, addr, cfg)
+    if err != nil {
+        t.Fatalf("new client session: %v", err)
+    }
+    defer sess.Close()
+    var stdout bytes.Buffer
+    sess.Stdout = &stdout
+    if err := sess.Run("hello"); err != nil {
+        t.Fatalf("run command: %v", err)
+    }
+    if got := stdout.String(); got != "hello\n" {
+        t.Fatalf("stdout = %q, want %q", got, "hello\n")
+    }
+}
+
+這層最適合測：
+
+ssh command 有沒有被正確接到
+public key / password auth
+middleware order
+access control
+git/scp/subsystem
+non-PTY command mode
+環境變數 / user / remote addr
+
+Wish 的 middleware 是類似 HTTP middleware 的概念，而且它的文件提醒 middleware composition 是 first-to-last，但最後一個會先執行，這種東西就很適合 integration test。 ￼
+
+⸻
+
+3. Bubble Tea TUI：用 Bubble Tea testing / teatest
+
+如果你的 Wish App 是 SSH 進去後跑 Bubble Tea TUI，那 TUI 本身不要一開始就用 SSH 測。先用 Bubble Tea 的測試方式測 model。
+
+Bubble Tea 官方測試文件提到可以用 tea.WithInput, tea.WithOutput, tea.WithoutRenderer, tea.WithWindowSize, tea.WithContext 等方式 mock input/output、控制視窗大小，並直接測 Update / View / commands。 ￼
+
+Charm 也有 teatest，官方 blog 說可以：
+
+go get github.com/charmbracelet/x/exp/teatest@latest
+
+而且它們建議在 CI 裡固定 color profile，不然 golden file 可能因終端色彩能力不同而 fail。 ￼
+
+所以 TUI 測試大概分兩種：
+
+model.Update table test
+View golden snapshot test
+
+尤其是 Bubble Tea 架構其實很適合測，因為核心是：
+
+Init() tea.Cmd
+Update(msg tea.Msg) (tea.Model, tea.Cmd)
+View() string
+
+也就是狀態機測試。
+
+⸻
+
+4. 類 Playwright 的 SSH/TUI E2E：用 expect / PTY，不是真的 Playwright
+
+你說的「SSH 版 Playwright」這個直覺很對，但 terminal 世界裡比較常見的概念叫：
+
+expect test
+PTY test
+terminal automation
+golden screen test
+
+Go 裡可以看 Netflix/go-expect。它提供 expect-like interface，用 pseudo-terminal 發 input、等待 output；它自己說不負責 process lifecycle，只專注於透過 pseudoterminal expecting output / sending input。 ￼
+
+典型 E2E 可以這樣做：
+
+go test 啟動 Wish server
+用 ssh client 連進去，request PTY
+用 expect 等待畫面出現 "Welcome"
+Send("j") / Send("\r") / Send("q")
+Expect("Goodbye")
+
+這層才比較像 Playwright。但 terminal/TUI 測試比瀏覽器難，因為 ANSI escape sequence、terminal size、color profile、timing 都會造成 flaky。所以它應該少量使用，只測 happy path / critical flow。
+
+⸻
+
+我會建議的測試金字塔
+
+70%  Go unit tests
+     service / command parser / auth / Update logic
+20%  Go integration tests
+     wish server + testsession + ssh client
+10%  PTY E2E tests
+     expect-style scripted interactive session
+
+對 Wish App 來說，不要直接把所有測試寫成「真的 ssh 進去按按鍵」。那樣會很像 browser E2E 測試過多：慢、flaky、debug 痛苦。
+
+⸻
+
+實務 scaffold 建議
+
+目錄可以這樣：
+
+internal/
+  app/
+    service.go
+    service_test.go
+  tui/
+    model.go
+    model_test.go
+    view_test.go
+  sshapp/
+    server.go
+    server_test.go
+testdata/
+  golden/
+    home.golden
+
+測試分 tag：
+
+go test ./...
+go test -tags=integration ./...
+go test -tags=e2e ./...
+
+CI 裡：
+
+go test ./...
+go test -race ./...
+go test -tags=integration ./...
+
+E2E 可以先不每次跑，或者只在 nightly / release 前跑。
+
+⸻
+
+具體選型
+
+目的    推薦工具
+Go business logic    testing, testify/require 可選
+Wish SSH session    charm.land/wish/v2/testsession
+SSH client    golang.org/x/crypto/ssh
+Bubble Tea model/view    Bubble Tea test options / teatest
+Terminal E2E    Netflix/go-expect 或直接用 Python pexpect
+CLI command snapshot    golden files
+CI 穩定性    固定 terminal size、禁用 color、timeout
+
+我的偏好會是：主要都用 Go 測，因為 Wish/Bubble Tea 都是 Go 生態；只有真的要模擬人類互動的少數 E2E，再考慮 go-expect 或 Python pexpect。
+如果你做的是「SSH 進去玩 demo / TUI game / interactive menu」，那 teatest + testsession + 少量 expect E2E 會是最順的組合。
+
+對，你抓得沒錯：teatest 到目前看起來仍然是 experimental。
+
+證據很明確：
+
+teatest 的 import path 還是：
+
+github.com/charmbracelet/x/exp/teatest
+
+Charm 官方 blog 也直接寫它是「experimental, work in progress library」，所以才放在 github.com/charmbracelet/x/exp/teatest。 ￼
+
+而 charmbracelet/x repo 本身也說這個 repository 是放 experimental packages，沒有 backwards compatibility 承諾；成熟後可能會搬到其他 repo。 ￼
+
+所以我的建議要修正一下：
+
+對正式專案，不要把 teatest 當唯一測試基礎
+
+比較穩的做法是：
+
+1. Bubble Tea model logic:
+   用普通 Go unit test 測 Update / View / command dispatch
+2. Wish / SSH layer:
+   用 Wish testsession 或 Go SSH client 做 integration test
+3. TUI snapshot / full interaction:
+   可選用 teatest，但把它視為 experimental helper
+4. 真正黑盒 E2E:
+   用 expect / pty 類工具，例如 go-expect 或 pexpect
+
+也就是：teatest 可以用，但最好不要讓核心測試策略依賴它。
+
+⸻
+
+更保守的 Bubble Tea 測法
+
+Bubble Tea 本身架構其實很容易測，因為核心是：
+
+Init() tea.Cmd
+Update(msg tea.Msg) (tea.Model, tea.Cmd)
+View() string
+
+所以可以直接測 Update：
+
+func TestModelQuit(t *testing.T) {
+    t.Parallel()
+    m := NewModel()
+    updated, _ := m.Update(tea.KeyMsg{
+        Type: tea.KeyRunes,
+        Runes: []rune{'q'},
+    })
+    got, ok := updated.(Model)
+    if !ok {
+        t.Fatalf("updated model type = %T, want Model", updated)
+    }
+    if !got.Quitting {
+        t.Fatal("expected model to be quitting")
+    }
+}
+
+這種測法最大優點是：
+
+不需要 terminal
+不需要 PTY
+不需要 timing
+不依賴 experimental package
+CI 穩定
+debug 容易
+
+Bubble Tea 官方測試文件也有提到它可以透過 input/output mocking、tea.WithInput、tea.WithOutput、tea.WithoutRenderer、tea.WithWindowSize、tea.WithContext 等 options 來測 program 行為。 ￼
+
+⸻
+
+如果想測 View，可以用 golden file，但不要綁死 teatest
+
+你可以自己做最簡單的 golden test：
+
+func TestViewGolden(t *testing.T) {
+    t.Parallel()
+    m := NewModel()
+    got := m.View()
+    wantBytes, err := os.ReadFile("testdata/home.golden")
+    if err != nil {
+        t.Fatalf("read golden: %v", err)
+    }
+    if diff := cmp.Diff(string(wantBytes), got); diff != "" {
+        t.Fatalf("View mismatch (-want +got):\n%s", diff)
+    }
+}
+
+也可以用 Charm 的 x/exp/golden，但注意它也在 x/exp 下面。pkg.go.dev 顯示它是 golden file helper，支援 compare raw output / escape sequences，並可用 -update 更新 golden files。 ￼
+
+如果你想保守一點，自己寫 20 行 golden helper 反而比較穩。
+
+⸻
+
+Wish App 的測試重點應該分離
+
+對一個 Wish App，我會這樣拆：
+
+// internal/app/service.go
+type Service interface {
+    Handle(ctx context.Context, user string, args []string) (string, error)
+}
+
+然後：
+
+service_test.go
+  測 business logic
+model_test.go
+  測 Bubble Tea 狀態機
+view_test.go
+  測 View output / golden
+server_test.go
+  測 Wish server + SSH command
+e2e_test.go
+  少量測完整 SSH + PTY 互動
+
+這樣就算 teatest 哪天 API 變了，也只會影響少數 snapshot / interaction test，不會動到主要測試。
+
+⸻
+
+teatest 適合什麼情況？
+
+我會把它定位成：
+
+適合：
+- demo / side project
+- Charm 生態內部風格的 TUI 測試
+- 想快速錄製 output / wait for output
+- 可接受 future breaking changes
+不適合：
+- 產品級核心測試唯一依賴
+- 大量 CI 必跑測試
+- 對 long-term stability 很敏感的 library
+
+也就是可以用，但要 pin version：
+
+go get github.com/charmbracelet/x/exp/teatest@<specific-commit-or-version>
+
+不要無腦追 latest。
+
+⸻
+
+最推薦組合
+
+對你說的 Wish App，我會用：
+
+必選：
+- Go testing
+- table-driven tests
+- Bubble Tea Update/View direct tests
+- Wish testsession / x/crypto/ssh integration tests
+可選：
+- 自製 golden file helper
+- go-expect / pexpect for real PTY E2E
+謹慎使用：
+- github.com/charmbracelet/x/exp/teatest
+
+所以一句話：teatest 是好用的實驗工具，不是目前我會押重注的穩定測試框架。
+正式專案我會先用普通 Go test 把 model/service/server 分層測好，再只用 teatest 或 expect 補少量互動式測試。
+```
+
+---
+
+_**Agent (claude-opus-4-7 2026-04-29 07:42:46Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:42:46Z)**_
+
+Two-part task. Let me set up tasks and start with navigation (it's small and concrete) before tackling the test design.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:42:49Z)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="TaskCreate"><details>
+<summary>Tool use: **TaskCreate**</summary>
+Make `h`/`left` = back and `l`/`right` = enter consistent everywhere it makes sense. Currently board_list and board_view have l/right→open but no h/left back; article_view has h/left back but no l. main_menu and wb_inbox have neither. Form screens (register/post_compose/wb_compose) must keep h/l reserved for text editing.</description>
+<parameter name="activeForm">Adding h/l navigation
+
+```text
+Task #12 created successfully: Add h/l navigation across all non-form screens
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:42:53Z)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="TaskCreate"><details>
+<summary>Tool use: **TaskCreate**</summary>
+Adopt the conservative testing strategy from the advisories: (1) shared storetest helper for repo tests in temp DB; (2) full repo coverage for boards/articles/pushes/water_balloons; (3) chat broker concurrency tests for register/unregister/send/雙開; (4) demonstrative TUI Update() tests for main_menu + board_list focused on the new h/l hotkeys; (5) brief docs/testing.md explaining the layered approach. Avoid teatest (experimental) and skip wish/testsession for now (the existing expect scripts already cover Layer 4).</description>
+<parameter name="activeForm">Writing unit tests
+
+```text
+Task #13 created successfully: Add unit tests across store, chat, tui
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:42:53Z)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="TaskUpdate"><details>
+<summary>Tool use: **TaskUpdate**</summary>
+
+```text
+Updated task #12 status
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:04Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:07Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_main_menu.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:11Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_main_menu.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:12Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_board_list.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:14Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_board_list.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:15Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_board_view.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:17Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_board_view.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:19Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_board_view.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:31Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_wb.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:32Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_wb.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:34Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_wb.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:37Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Build with nav changes
+
+`go build -o /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/cmd/sshbbs && echo BUILD OK`
+
+```text
+BUILD OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:43Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:43Z)**_
+
+Quick expect smoke test for the new h/l navigation.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:45Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Start server
+
+`/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs -addr=:2222 -db=/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db -hostkey=/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/.ssh/host_ed25519`
+
+```text
+Command running in background with ID: bx4y3mnvb. Output is being written to: /private/tmp/claude-501/-Volumes-Data-Program-tries-2026-04-29-ssh-bbs/5ad860d3-649a-4886-b05b-625442e1117a/tasks/bx4y3mnvb.output
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:43:55Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```exp
+#!/usr/bin/expect -f
+set timeout 6
+log_user 0
+
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 alice@localhost
+expect "password:"
+send "pw123456\r"
+expect -re "主選單"
+
+# l = enter into Boards
+send "l"
+expect {
+    -re "看板列表" { puts "PASS: main_menu 'l' opens boards" }
+    timeout { puts "FAIL: main_menu 'l'"; exit 1 }
+}
+
+# l = enter Test
+send "j"
+sleep 0.2
+send "l"
+expect {
+    -re "看板 Test" { puts "PASS: board_list 'l' opens board" }
+    timeout { puts "FAIL: board_list 'l'"; exit 1 }
+}
+
+# l = enter article
+send "l"
+expect {
+    -re "文章 #" { puts "PASS: board_view 'l' opens article" }
+    timeout { puts "FAIL: board_view 'l'"; exit 1 }
+}
+
+# h = back to board view
+send "h"
+expect {
+    -re "看板 Test" { puts "PASS: article_view 'h' goes back" }
+    timeout { puts "FAIL: article_view 'h'"; exit 1 }
+}
+
+# h = back to board list
+send "h"
+expect {
+    -re "看板列表" { puts "PASS: board_view 'h' goes back" }
+    timeout { puts "FAIL: board_view 'h'"; exit 1 }
+}
+
+# h = back to main menu
+send "h"
+expect {
+    -re "主選單" { puts "PASS: board_list 'h' goes back" }
+    timeout { puts "FAIL: board_list 'h'"; exit 1 }
+}
+
+# Open WB inbox via Ctrl+U; h should go back
+send "\x15"
+expect -re "水球 Water Balloons"
+send "h"
+expect {
+    -re "主選單" { puts "PASS: wb_inbox 'h' goes back" }
+    timeout { puts "FAIL: wb_inbox 'h'"; exit 1 }
+}
+
+send "\x03"
+expect eof
+puts "ALL h/l NAV TESTS PASS"
+
+```
+
+```text
+File created successfully at: /tmp/sshbbs_hl_test.exp
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:03Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run h/l navigation smoke test
+
+`sleep 1 && expect -f /tmp/sshbbs_hl_test.exp 2>&1`
+
+```text
+Exit code 1
+PASS: main_menu 'l' opens boards
+FAIL: board_list 'l'
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:07Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:08Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check server log
+
+`cat /private/tmp/claude-501/-Volumes-Data-Program-tries-2026-04-29-ssh-bbs/5ad860d3-649a-4886-b05b-625442e1117a/tasks/bx4y3mnvb.output | tail -10`
+
+```text
+2026/04/29 15:43:46 storage ready at /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db
+2026/04/29 15:43:46 sshbbs 0.1.0-dev listening on :2222
+2026/04/29 15:43:46 listen: listen tcp :2222: bind: address already in use
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:24Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:26Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Kill all sshbbs processes
+
+`pgrep -fl sshbbs ; echo "--- killing all ---" ; pkill -KILL -f /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs ; sleep 0.5 ; pgrep -fl sshbbs ; echo "--- port ---" ; nc -z localhost 2222 && echo UP || echo DOWN`
+
+```text
+88737 go run ./cmd/sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519
+88820 /var/folders/g3/gsbp4bsx1gs51t1805r34ztw0000gn/T/go-build3372589080/b001/exe/sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519
+--- killing all ---
+88737 go run ./cmd/sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519
+88820 /var/folders/g3/gsbp4bsx1gs51t1805r34ztw0000gn/T/go-build3372589080/b001/exe/sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519
+--- port ---
+Connection to localhost port 2222 [tcp/rockwell-csp2] succeeded!
+UP
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:39Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:40Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Force kill the orphaned processes
+
+`kill -9 88737 88820 2>&1 ; sleep 0.5 ; pgrep -fl sshbbs ; echo "--- port ---" ; nc -z localhost 2222 && echo UP || echo DOWN`
+
+```text
+--- port ---
+DOWN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:46Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:47Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Start server
+
+`/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs -addr=:2222 -db=/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db -hostkey=/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/.ssh/host_ed25519`
+
+```text
+Command running in background with ID: b25bk4spz. Output is being written to: /private/tmp/claude-501/-Volumes-Data-Program-tries-2026-04-29-ssh-bbs/5ad860d3-649a-4886-b05b-625442e1117a/tasks/b25bk4spz.output
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:44:56Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-run h/l test
+
+`sleep 1 && expect -f /tmp/sshbbs_hl_test.exp 2>&1`
+
+```text
+Exit code 1
+PASS: main_menu 'l' opens boards
+PASS: board_list 'l' opens board
+PASS: board_view 'l' opens article
+PASS: article_view 'h' goes back
+PASS: board_view 'h' goes back
+PASS: board_list 'h' goes back
+FAIL: wb_inbox 'h'
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:45:09Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:45:12Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check server log + alice's inbox content
+
+`cat /private/tmp/claude-501/-Volumes-Data-Program-tries-2026-04-29-ssh-bbs/5ad860d3-649a-4886-b05b-625442e1117a/tasks/b25bk4spz.output 2>&1 | tail -10 && echo "--- alice WBs ---" && sqlite3 /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db "SELECT id, from_userid, to_user_id, body FROM water_balloons WHERE to_user_id = 1;"`
+
+```text
+2026/04/29 15:44:47 storage ready at /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db
+2026/04/29 15:44:47 sshbbs 0.1.0-dev listening on :2222
+2026/04/29 15:44:49 INFO auth ok user=alice host=[::1]:59729
+2026/04/29 15:44:49 INFO alice connect [::1]:59729 false [] tmux-256color 0 0 SSH-2.0-OpenSSH_10.0
+2026/04/29 15:44:49 INFO session registered user=alice online=1
+2026/04/29 15:44:56 INFO session unregistered user=alice online=0
+2026/04/29 15:44:56 INFO [::1]:59729 disconnect 6.350109958s
+--- alice WBs ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:45:24Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:45:26Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /tmp/sshbbs_hl_test.exp has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:45:33Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verbose run to see wb_inbox failure
+
+`expect -f /tmp/sshbbs_hl_test.exp 2>&1 | tail -40`
+
+```text
+  推 alice          LIVEMARK-XYZ  04/29 07:12
+  推 daviddwlee84   test  04/29 07:37
+
+  j/k scroll · + 推 · - 噓 · = → · Esc/← back · Ctrl+C disconnect
+[18;HPASS: board_view 'l' opens article
+[H
+  看板 Test · 測試板  
+
+ #     Date         Sc.   Author          Title               
+▸1     04/29 07:08  3     alice           newline-test
+  2     04/29 07:08        alice           中文標題測試
+  3     04/29 07:06        alice           Hello World
+  4     04/29 07:06        alice           測試文章一
+
+  ↑/↓ j/k move · Enter/→/l open · p post · Esc/←/h back · Ctrl+C disconnect
+[J[11;HPASS: article_view 'h' goes back
+[H
+  看板列表 Boards  
+
+  Name            Title                             Description
+▸ ChitChat        閒聊                              General chat. Be ki…
+   Test            測試板                            Try things here. Po…
+   Welcome         歡迎來到 SSH-BBS                  System welcome and …
+
+  ↑/↓ j/k move · Enter/→/l open · Esc/←/h back · Ctrl+C disconnect
+[J[10;HPASS: board_view 'h' goes back
+[H
+  SSH-BBS · Alice (alice)  
+
+  上次登入 2026-04-29 07:45 · 累計登入 13 次 · 發文 2 篇
+
+    主選單 Main Menu  
+
+▸  1. 看板列表 Boards                        browse and read articles
+    2. 水球 Water Balloons  private messages with online users
+    3. 離線 Quit  disconnect
+
+  ↑/↓ j/k move · Enter/→/l choose · 1-3 jump · q quit
+[13;HPASS: board_list 'h' goes back
+FAIL: wb_inbox 'h'
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:06Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:09Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /tmp/sshbbs_hl_test.exp has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:11Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-run with sleeps
+
+`expect -f /tmp/sshbbs_hl_test.exp 2>&1 | grep -E '^(PASS|FAIL|ALL)'`
+
+```text
+PASS: ctrl+u opens wb_inbox
+ALL h/l NAV TESTS PASS
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:38Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:39Z)**_
+
+Step 12 done — all 7 hotkey tests pass. Moving to Step 13: tests. I'll start by refactoring the broker to take a `Sender` interface so it's mockable, then build the test suites.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:41Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stop server before testing
+
+`pkill -f /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs 2>/dev/null; sleep 0.3; echo done`
+
+```text
+done
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:41Z)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="TaskUpdate"><details>
+<summary>Tool use: **TaskUpdate**</summary>
+
+```text
+Updated task #12 status
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:42Z)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="TaskUpdate"><details>
+<summary>Tool use: **TaskUpdate**</summary>
+
+```text
+Updated task #13 status
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:46Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/chat/broker.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:48Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/chat/broker.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:51Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify Sender refactor compiles
+
+`go build ./... 2>&1 | head`
+
+```text
+(Bash completed with no output)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:55Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:46:56Z)**_
+
+Now the shared test helper, then store + broker + TUI tests.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:47:06Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+// Package storetest provides shared helpers for tests that need a fresh
+// SQLite store. It lives in its own package so any internal package can
+// import it without creating cycles.
+package storetest
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+)
+
+// New opens a fresh on-disk SQLite store in t.TempDir(), runs migrations,
+// and registers a Cleanup to close it. Use it whenever you'd write
+// `store.Open` in a test — never share stores across tests.
+func New(tb testing.TB) *store.Store {
+	tb.Helper()
+	dir := tb.TempDir()
+	st, err := store.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		tb.Fatalf("store.Open: %v", err)
+	}
+	tb.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
+// MustUser inserts a user with a placeholder password hash and returns it.
+// Convenient for tests that need a logged-in identity but don't care about auth.
+func MustUser(tb testing.TB, st *store.Store, userID, nickname string) *store.User {
+	tb.Helper()
+	u, err := st.Users().Create(context.Background(), userID, "$2a$12$placeholderplaceholderplaceholderplaceholderplaceholder.", nickname, "")
+	if err != nil {
+		tb.Fatalf("create user %q: %v", userID, err)
+	}
+	return u
+}
+
+// MustBoard returns a seeded board by name, failing the test if not found.
+// Useful with the default Welcome / Test / ChitChat boards which
+// SeedDefaults / migration 0002 create automatically.
+func MustBoard(tb testing.TB, st *store.Store, name string) *store.Board {
+	tb.Helper()
+	b, err := st.Boards().GetByName(context.Background(), name)
+	if err != nil {
+		tb.Fatalf("get board %q: %v", name, err)
+	}
+	return b
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/store/storetest/storetest.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:47:12Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package store_test
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func TestOpenRunsMigrations(t *testing.T) {
+	st := storetest.New(t)
+
+	// Default boards must exist after migrations + SeedDefaults isn't called
+	// here — migration 0002 alone is enough.
+	for _, name := range []string{"Welcome", "Test", "ChitChat"} {
+		if _, err := st.Boards().GetByName(context.Background(), name); err != nil {
+			t.Errorf("default board %q missing: %v", name, err)
+		}
+	}
+}
+
+func TestOpenIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "idem.db")
+
+	// First open creates schema.
+	s1, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if _, err := s1.Boards().GetByName(context.Background(), "Test"); err != nil {
+		t.Fatalf("first lookup: %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// Re-open must not re-apply migrations and must preserve data.
+	s2, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer s2.Close()
+	boards, err := s2.Boards().List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(boards) != 3 {
+		t.Errorf("got %d boards, want 3 (migrations re-applied?)", len(boards))
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/store/store_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:47:20Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package store_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func TestBoards_List(t *testing.T) {
+	st := storetest.New(t)
+	got, err := st.Boards().List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 default boards, got %d", len(got))
+	}
+	// Order is by name COLLATE NOCASE: ChitChat, Test, Welcome.
+	wantOrder := []string{"ChitChat", "Test", "Welcome"}
+	for i, w := range wantOrder {
+		if got[i].Name != w {
+			t.Errorf("List[%d].Name = %q, want %q", i, got[i].Name, w)
+		}
+	}
+}
+
+func TestBoards_GetByName_CaseInsensitive(t *testing.T) {
+	st := storetest.New(t)
+	for _, name := range []string{"test", "Test", "TEST"} {
+		got, err := st.Boards().GetByName(context.Background(), name)
+		if err != nil {
+			t.Errorf("GetByName(%q): %v", name, err)
+			continue
+		}
+		if got.Name != "Test" {
+			t.Errorf("GetByName(%q).Name = %q, want %q", name, got.Name, "Test")
+		}
+	}
+}
+
+func TestBoards_GetByName_NotFound(t *testing.T) {
+	st := storetest.New(t)
+	_, err := st.Boards().GetByName(context.Background(), "DoesNotExist")
+	if !errors.Is(err, store.ErrBoardNotFound) {
+		t.Errorf("got %v, want ErrBoardNotFound", err)
+	}
+}
+
+func TestBoards_SeedDefaults_Idempotent(t *testing.T) {
+	st := storetest.New(t)
+	// Migration 0002 already inserted them. SeedDefaults again must not
+	// duplicate or error.
+	for i := 0; i < 3; i++ {
+		if err := st.Boards().SeedDefaults(context.Background()); err != nil {
+			t.Fatalf("SeedDefaults #%d: %v", i, err)
+		}
+	}
+	got, err := st.Boards().List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 3 {
+		t.Errorf("got %d boards after repeated seeding, want 3", len(got))
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/store/boards_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:47:34Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package store_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func TestArticles_CreateAndGet(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "Alice")
+	board := storetest.MustBoard(t, st, "Test")
+
+	got, err := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "標題", "內容\n第二行")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if got.ID == 0 {
+		t.Error("Create returned zero ID")
+	}
+	if got.Title != "標題" || got.Body != "內容\n第二行" {
+		t.Errorf("title/body mismatch: %q / %q", got.Title, got.Body)
+	}
+	if got.RecommendScore != 0 {
+		t.Errorf("RecommendScore = %d, want 0", got.RecommendScore)
+	}
+
+	fetched, err := st.Articles().GetByID(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if fetched.AuthorUserID != "alice" {
+		t.Errorf("AuthorUserID = %q, want alice", fetched.AuthorUserID)
+	}
+}
+
+func TestArticles_GetByID_NotFound(t *testing.T) {
+	st := storetest.New(t)
+	_, err := st.Articles().GetByID(context.Background(), 9999)
+	if !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("got %v, want ErrArticleNotFound", err)
+	}
+}
+
+func TestArticles_ListByBoard_NewestFirst(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	// Insert three with explicit small sleeps so created_at differs.
+	for i, title := range []string{"first", "second", "third"} {
+		if _, err := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, title, "body"); err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	got, err := st.Articles().ListByBoard(ctx, board.ID, 0)
+	if err != nil {
+		t.Fatalf("ListByBoard: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d, want 3", len(got))
+	}
+	// Newest-first.
+	wantOrder := []string{"third", "second", "first"}
+	for i, w := range wantOrder {
+		if got[i].Title != w {
+			t.Errorf("[%d] = %q, want %q", i, got[i].Title, w)
+		}
+	}
+}
+
+func TestArticles_ListByBoard_Limit(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	for i := 0; i < 5; i++ {
+		_, _ = st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "t", "b")
+	}
+	got, err := st.Articles().ListByBoard(ctx, board.ID, 2)
+	if err != nil {
+		t.Fatalf("ListByBoard: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d, want 2", len(got))
+	}
+}
+
+func TestArticles_BoardIsolation(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	test := storetest.MustBoard(t, st, "Test")
+	chitChat := storetest.MustBoard(t, st, "ChitChat")
+
+	_, _ = st.Articles().Create(ctx, test.ID, user.ID, user.UserID, "in test", "")
+	_, _ = st.Articles().Create(ctx, chitChat.ID, user.ID, user.UserID, "in chitchat", "")
+
+	gotTest, _ := st.Articles().ListByBoard(ctx, test.ID, 0)
+	if len(gotTest) != 1 || gotTest[0].Title != "in test" {
+		t.Errorf("Test board: got %+v, want one article 'in test'", gotTest)
+	}
+	gotCC, _ := st.Articles().ListByBoard(ctx, chitChat.ID, 0)
+	if len(gotCC) != 1 || gotCC[0].Title != "in chitchat" {
+		t.Errorf("ChitChat board: got %+v, want one article 'in chitchat'", gotCC)
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/store/articles_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:47:50Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package store_test
+
+import (
+	"context"
+	"sync"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func TestPushes_ScoreDeltas(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+
+	cases := []struct {
+		kind      store.PushKind
+		userID    int64
+		wantScore int64
+	}{
+		{store.PushKindPush, bob.ID, 1},
+		{store.PushKindPush, alice.ID, 2},
+		{store.PushKindBoo, bob.ID, 1},
+		{store.PushKindArrow, alice.ID, 1}, // arrow = 0 delta
+		{store.PushKindBoo, bob.ID, 0},
+		{store.PushKindBoo, bob.ID, -1},
+	}
+	for i, tc := range cases {
+		if _, err := st.Pushes().Create(ctx, art.ID, tc.userID, "x", tc.kind, "msg"); err != nil {
+			t.Fatalf("[%d] Create: %v", i, err)
+		}
+		fresh, err := st.Articles().GetByID(ctx, art.ID)
+		if err != nil {
+			t.Fatalf("[%d] GetByID: %v", i, err)
+		}
+		if fresh.RecommendScore != tc.wantScore {
+			t.Errorf("[%d] kind=%s: score = %d, want %d", i, tc.kind, fresh.RecommendScore, tc.wantScore)
+		}
+	}
+}
+
+func TestPushes_ListPreservesInsertionOrder(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+
+	bodies := []string{"first push", "second push", "third push"}
+	for _, body := range bodies {
+		if _, err := st.Pushes().Create(ctx, art.ID, alice.ID, alice.UserID, store.PushKindPush, body); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	got, err := st.Pushes().ListByArticle(ctx, art.ID)
+	if err != nil {
+		t.Fatalf("ListByArticle: %v", err)
+	}
+	if len(got) != len(bodies) {
+		t.Fatalf("got %d, want %d", len(got), len(bodies))
+	}
+	for i, want := range bodies {
+		if got[i].Body != want {
+			t.Errorf("[%d].Body = %q, want %q", i, got[i].Body, want)
+		}
+	}
+}
+
+func TestPushes_InvalidKind(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+	if _, err := st.Pushes().Create(ctx, art.ID, alice.ID, alice.UserID, "bogus", "x"); err == nil {
+		t.Error("expected error for invalid kind, got nil")
+	}
+}
+
+// TestPushes_ConcurrentScoreAtomicity asserts that N concurrent push inserts
+// against the same article yield exactly N as the cached score — no lost
+// updates from interleaved RMW. Run with `go test -race`.
+func TestPushes_ConcurrentScoreAtomicity(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+
+	const N = 50
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := 0; i < N; i++ {
+		go func() {
+			defer wg.Done()
+			if _, err := st.Pushes().Create(ctx, art.ID, alice.ID, alice.UserID, store.PushKindPush, "x"); err != nil {
+				t.Errorf("Create: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	fresh, err := st.Articles().GetByID(ctx, art.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if fresh.RecommendScore != int64(N) {
+		t.Errorf("score = %d, want %d (lost update?)", fresh.RecommendScore, N)
+	}
+	pushes, _ := st.Pushes().ListByArticle(ctx, art.ID)
+	if len(pushes) != N {
+		t.Errorf("inserted %d, found %d in DB", N, len(pushes))
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/store/pushes_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:08Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package store_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func TestWaterBalloons_InsertAndList(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+
+	for i := 0; i < 3; i++ {
+		_, err := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "msg", false)
+		if err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
+	}
+
+	unread, err := st.WaterBalloons().ListUnreadFor(ctx, bob.ID)
+	if err != nil {
+		t.Fatalf("ListUnreadFor: %v", err)
+	}
+	if len(unread) != 3 {
+		t.Errorf("got %d unread, want 3", len(unread))
+	}
+	// Oldest first by id ASC — important for replay ordering.
+	for i := 0; i < len(unread)-1; i++ {
+		if unread[i].ID > unread[i+1].ID {
+			t.Errorf("ListUnreadFor not in id ASC order")
+		}
+	}
+}
+
+func TestWaterBalloons_MarkRead(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	wb, err := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "hi", true)
+	if err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := st.WaterBalloons().MarkRead(ctx, wb.ID); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	got, err := st.WaterBalloons().ListUnreadFor(ctx, bob.ID)
+	if err != nil {
+		t.Fatalf("ListUnreadFor: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d unread after MarkRead, want 0", len(got))
+	}
+}
+
+func TestWaterBalloons_MarkAllReadFor(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	for i := 0; i < 5; i++ {
+		_, _ = st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "msg", false)
+	}
+	if err := st.WaterBalloons().MarkAllReadFor(ctx, bob.ID); err != nil {
+		t.Fatalf("MarkAllReadFor: %v", err)
+	}
+	unread, _ := st.WaterBalloons().ListUnreadFor(ctx, bob.ID)
+	if len(unread) != 0 {
+		t.Errorf("after MarkAllReadFor: %d unread, want 0", len(unread))
+	}
+}
+
+// TestWaterBalloons_InboxOrdering checks that ListInboxFor returns unread
+// before read, and within each group newest-first by id.
+func TestWaterBalloons_InboxOrdering(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+
+	// Insert 4 in order, mark the second one read.
+	w1, _ := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "first",  false)
+	w2, _ := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "second", false)
+	w3, _ := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "third",  false)
+	w4, _ := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "fourth", false)
+	_ = st.WaterBalloons().MarkRead(ctx, w2.ID)
+	_ = w1
+	_ = w3
+	_ = w4
+
+	got, err := st.WaterBalloons().ListInboxFor(ctx, bob.ID, 0)
+	if err != nil {
+		t.Fatalf("ListInboxFor: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("got %d, want 4", len(got))
+	}
+	// Expected order: unread newest-first (w4, w3, w1), then read (w2).
+	wantBodies := []string{"fourth", "third", "first", "second"}
+	for i, w := range wantBodies {
+		if got[i].Body != w {
+			t.Errorf("[%d].Body = %q, want %q", i, got[i].Body, w)
+		}
+	}
+}
+
+func TestWaterBalloons_DeliveredLiveFlag(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+
+	live, _ := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "live", true)
+	offline, _ := st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, bob.ID, "offline", false)
+	if !live.DeliveredLive {
+		t.Error("live WB has DeliveredLive=false")
+	}
+	if offline.DeliveredLive {
+		t.Error("offline WB has DeliveredLive=true")
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/store/waterballoons_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:13Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:29Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run store tests with race detector
+
+`go test -race ./internal/store/... 2>&1 | tail -20`
+
+```text
+ok  	github.com/daviddwlee84/sshbbs/internal/store	2.040s
+?   	github.com/daviddwlee84/sshbbs/internal/store/storetest	[no test files]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:32Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:32Z)**_
+
+Store tests all pass with -race. Now broker + TUI tests.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:54Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package chat_test
+
+import (
+	"sync"
+	"sync/atomic"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/daviddwlee84/sshbbs/internal/chat"
+)
+
+// fakeSender is a chat.Sender that records every message for assertion.
+type fakeSender struct {
+	mu     sync.Mutex
+	got    []tea.Msg
+	id     int // for distinguishing "雙開" sessions
+}
+
+func newFake(id int) *fakeSender { return &fakeSender{id: id} }
+
+func (f *fakeSender) Send(msg tea.Msg) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.got = append(f.got, msg)
+}
+
+func (f *fakeSender) Got() []tea.Msg {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]tea.Msg, len(f.got))
+	copy(out, f.got)
+	return out
+}
+
+func TestBroker_RegisterAppearsOnline(t *testing.T) {
+	b := chat.NewBroker()
+	s := newFake(1)
+	b.Register(&chat.Session{UserID: 1, UserIDStr: "alice", Program: s})
+
+	online := b.OnlineList()
+	if len(online) != 1 {
+		t.Fatalf("got %d online, want 1", len(online))
+	}
+	if online[0].UserIDStr != "alice" || online[0].Sessions != 1 {
+		t.Errorf("online[0] = %+v", online[0])
+	}
+}
+
+func TestBroker_UnregisterRemoves(t *testing.T) {
+	b := chat.NewBroker()
+	s := newFake(1)
+	b.Register(&chat.Session{UserID: 1, UserIDStr: "alice", Program: s})
+	b.Unregister(1, s)
+	if len(b.OnlineList()) != 0 {
+		t.Errorf("OnlineList not empty after Unregister")
+	}
+}
+
+// 雙開: same user, two sessions. Send should reach both. Unregister one
+// must keep the other online.
+func TestBroker_MultipleSessionsSameUser(t *testing.T) {
+	b := chat.NewBroker()
+	s1 := newFake(1)
+	s2 := newFake(2)
+	b.Register(&chat.Session{UserID: 1, UserIDStr: "alice", Program: s1})
+	b.Register(&chat.Session{UserID: 1, UserIDStr: "alice", Program: s2})
+
+	online := b.OnlineList()
+	if len(online) != 1 {
+		t.Fatalf("OnlineList: got %d entries, want 1 (one user, two sessions)", len(online))
+	}
+	if online[0].Sessions != 2 {
+		t.Errorf("Sessions = %d, want 2", online[0].Sessions)
+	}
+
+	if !b.Send(1, "hello") {
+		t.Error("Send returned false but recipient is online")
+	}
+	for i, s := range []*fakeSender{s1, s2} {
+		if g := s.Got(); len(g) != 1 || g[0] != "hello" {
+			t.Errorf("session %d got %v, want [\"hello\"]", i, g)
+		}
+	}
+
+	// Drop s1; s2 must remain.
+	b.Unregister(1, s1)
+	if !b.Send(1, "again") {
+		t.Error("Send returned false; s2 should still be online")
+	}
+	if len(s1.Got()) != 1 {
+		t.Errorf("s1 received message after Unregister; len=%d", len(s1.Got()))
+	}
+	if len(s2.Got()) != 2 {
+		t.Errorf("s2.Got = %v, want length 2", s2.Got())
+	}
+}
+
+func TestBroker_SendToOfflineReturnsFalse(t *testing.T) {
+	b := chat.NewBroker()
+	if b.Send(99, "x") {
+		t.Error("Send to nobody returned true")
+	}
+}
+
+func TestBroker_SendToAllExcludesSender(t *testing.T) {
+	b := chat.NewBroker()
+	alice := newFake(1)
+	bob := newFake(2)
+	b.Register(&chat.Session{UserID: 1, UserIDStr: "alice", Program: alice})
+	b.Register(&chat.Session{UserID: 2, UserIDStr: "bob", Program: bob})
+
+	b.SendToAll(1, "broadcast")
+
+	if g := alice.Got(); len(g) != 0 {
+		t.Errorf("alice (sender) received broadcast: %v", g)
+	}
+	if g := bob.Got(); len(g) != 1 || g[0] != "broadcast" {
+		t.Errorf("bob got %v, want [\"broadcast\"]", g)
+	}
+}
+
+func TestBroker_LookupByUserID(t *testing.T) {
+	b := chat.NewBroker()
+	b.Register(&chat.Session{UserID: 42, UserIDStr: "alice", Program: newFake(1)})
+	if got := b.LookupByUserID("alice"); got != 42 {
+		t.Errorf("LookupByUserID(alice) = %d, want 42", got)
+	}
+	if got := b.LookupByUserID("ALICE"); got != 42 {
+		t.Errorf("LookupByUserID(ALICE) (case-insensitive) = %d, want 42", got)
+	}
+	if got := b.LookupByUserID("ghost"); got != 0 {
+		t.Errorf("LookupByUserID(ghost) = %d, want 0", got)
+	}
+}
+
+// Concurrency stress: many Register / Unregister / Send running together.
+// Run with `go test -race` to surface data races.
+func TestBroker_Concurrency(t *testing.T) {
+	b := chat.NewBroker()
+	const workers = 16
+	const iters = 100
+
+	var sent atomic.Int64
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			s := newFake(int(id))
+			for i := 0; i < iters; i++ {
+				b.Register(&chat.Session{UserID: id, UserIDStr: "u", Program: s})
+				b.Send(id, "x")
+				sent.Add(1)
+				b.Unregister(id, s)
+			}
+		}(int64(w + 1))
+	}
+	wg.Wait()
+
+	if got := len(b.OnlineList()); got != 0 {
+		t.Errorf("OnlineList not empty after all unregisters: %d", got)
+	}
+	if sent.Load() != int64(workers*iters) {
+		t.Errorf("sent = %d, want %d", sent.Load(), workers*iters)
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/chat/broker_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:48:58Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run broker tests with race detector
+
+`go test -race ./internal/chat/... 2>&1 | tail -10`
+
+```text
+ok  	github.com/daviddwlee84/sshbbs/internal/chat	1.492s
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:49:04Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:49:26Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package tui
+
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+)
+
+// keyOf builds a tea.KeyMsg whose .String() matches the wanted form.
+// bubbletea exposes typed key constants; we use Runes for ASCII letters
+// and named Type values for special keys.
+func keyOf(s string) tea.KeyMsg {
+	switch s {
+	case "enter":
+		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "esc":
+		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}
+	case "down":
+		return tea.KeyMsg{Type: tea.KeyDown}
+	case "backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace}
+	case "ctrl+u":
+		return tea.KeyMsg{Type: tea.KeyCtrlU}
+	case "ctrl+c":
+		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case " ":
+		return tea.KeyMsg{Type: tea.KeySpace}
+	}
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// runCmd invokes the tea.Cmd returned by Update and returns the resulting
+// tea.Msg (or nil if cmd is nil).
+func runCmd(cmd tea.Cmd) tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	return cmd()
+}
+
+func newMainMenuFixture() (mainMenuModel, Deps) {
+	deps := Deps{
+		User: &store.User{ID: 1, UserID: "alice", Nickname: "Alice"},
+	}
+	return newMainMenuModel(deps), deps
+}
+
+func TestMainMenu_CursorMovement(t *testing.T) {
+	m, _ := newMainMenuFixture()
+	if m.cursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", m.cursor)
+	}
+	for _, key := range []string{"j", "down"} {
+		m, _ = updateMM(m, keyOf(key))
+	}
+	if m.cursor != 2 {
+		t.Errorf("after 2x down: cursor = %d, want 2", m.cursor)
+	}
+	m, _ = updateMM(m, keyOf("k"))
+	m, _ = updateMM(m, keyOf("up"))
+	if m.cursor != 0 {
+		t.Errorf("after 2x up: cursor = %d, want 0", m.cursor)
+	}
+}
+
+func TestMainMenu_CursorClamps(t *testing.T) {
+	m, _ := newMainMenuFixture()
+	for i := 0; i < 100; i++ {
+		m, _ = updateMM(m, keyOf("k")) // should not go below 0
+	}
+	if m.cursor != 0 {
+		t.Errorf("cursor underflowed: %d", m.cursor)
+	}
+	for i := 0; i < 100; i++ {
+		m, _ = updateMM(m, keyOf("j")) // should not go past last
+	}
+	if m.cursor != len(m.items)-1 {
+		t.Errorf("cursor overflowed: %d, want %d", m.cursor, len(m.items)-1)
+	}
+}
+
+// "l" / right / Enter all open the cursored item — verifies the new
+// h/l navigation parity for forward-direction.
+func TestMainMenu_ForwardKeys(t *testing.T) {
+	for _, key := range []string{"enter", " ", "l", "right"} {
+		t.Run(key, func(t *testing.T) {
+			m, _ := newMainMenuFixture()
+			// cursor=0 -> first item routes to ScreenBoardList
+			_, cmd := updateMM(m, keyOf(key))
+			msg := runCmd(cmd)
+			nav, ok := msg.(NavigateMsg)
+			if !ok {
+				t.Fatalf("got %T, want NavigateMsg", msg)
+			}
+			if nav.To != ScreenBoardList {
+				t.Errorf("To = %v, want ScreenBoardList", nav.To)
+			}
+		})
+	}
+}
+
+func TestMainMenu_NumericShortcuts(t *testing.T) {
+	cases := []struct {
+		key  string
+		want Screen
+	}{
+		{"1", ScreenBoardList},
+		{"2", ScreenWBInbox},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			m, _ := newMainMenuFixture()
+			_, cmd := updateMM(m, keyOf(tc.key))
+			msg := runCmd(cmd)
+			nav, ok := msg.(NavigateMsg)
+			if !ok {
+				t.Fatalf("got %T, want NavigateMsg", msg)
+			}
+			if nav.To != tc.want {
+				t.Errorf("To = %v, want %v", nav.To, tc.want)
+			}
+		})
+	}
+}
+
+// Quit shortcut: '3' jumps to "Quit" and emits tea.Quit, not a NavigateMsg.
+func TestMainMenu_QuitShortcut(t *testing.T) {
+	m, _ := newMainMenuFixture()
+	_, cmd := updateMM(m, keyOf("3"))
+	msg := runCmd(cmd)
+	if _, isQuit := msg.(tea.QuitMsg); !isQuit {
+		t.Errorf("got %T, want tea.QuitMsg", msg)
+	}
+}
+
+// Helper to type-assert past the tea.Model interface back to mainMenuModel.
+func updateMM(m mainMenuModel, msg tea.Msg) (mainMenuModel, tea.Cmd) {
+	model, cmd := m.Update(msg)
+	return model.(mainMenuModel), cmd
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_main_menu_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:49:39Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package tui
+
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func newBoardListFixture(t *testing.T) (boardListModel, *store.Store) {
+	t.Helper()
+	st := storetest.New(t)
+	deps := Deps{
+		Store: st,
+		User:  &store.User{ID: 1, UserID: "alice"},
+	}
+	return newBoardListModel(deps), st
+}
+
+func TestBoardList_LoadsDefaultBoards(t *testing.T) {
+	m, _ := newBoardListFixture(t)
+	if m.loadErr != nil {
+		t.Fatalf("loadErr = %v", m.loadErr)
+	}
+	if len(m.boards) != 3 {
+		t.Errorf("loaded %d boards, want 3", len(m.boards))
+	}
+}
+
+// All four "back" keys (esc, backspace, left, h) must navigate to main menu —
+// this is the new h/l parity from Step 12.
+func TestBoardList_BackKeys(t *testing.T) {
+	for _, key := range []string{"esc", "backspace", "left", "h"} {
+		t.Run(key, func(t *testing.T) {
+			m, _ := newBoardListFixture(t)
+			_, cmd := m.Update(keyOf(key))
+			msg := runCmd(cmd)
+			nav, ok := msg.(NavigateMsg)
+			if !ok {
+				t.Fatalf("got %T, want NavigateMsg", msg)
+			}
+			if nav.To != ScreenMainMenu {
+				t.Errorf("To = %v, want ScreenMainMenu", nav.To)
+			}
+		})
+	}
+}
+
+// All four "forward" keys (enter, space, right, l) must open the cursored board.
+func TestBoardList_ForwardKeys(t *testing.T) {
+	for _, key := range []string{"enter", " ", "right", "l"} {
+		t.Run(key, func(t *testing.T) {
+			m, _ := newBoardListFixture(t)
+			_, cmd := m.Update(keyOf(key))
+			msg := runCmd(cmd)
+			nav, ok := msg.(NavigateMsg)
+			if !ok {
+				t.Fatalf("got %T, want NavigateMsg", msg)
+			}
+			if nav.To != ScreenBoardView {
+				t.Errorf("To = %v, want ScreenBoardView", nav.To)
+			}
+			// cursor=0 → ChitChat (alphabetically first by COLLATE NOCASE)
+			if nav.BoardID != m.boards[0].ID {
+				t.Errorf("BoardID = %d, want %d (ChitChat)", nav.BoardID, m.boards[0].ID)
+			}
+		})
+	}
+}
+
+func TestBoardList_CursorTracksOpen(t *testing.T) {
+	m, _ := newBoardListFixture(t)
+	// Move cursor to "Test" (index 1).
+	model, _ := m.Update(keyOf("j"))
+	m = model.(boardListModel)
+
+	_, cmd := m.Update(keyOf("enter"))
+	nav := runCmd(cmd).(NavigateMsg)
+	if nav.BoardID != m.boards[1].ID {
+		t.Errorf("BoardID = %d, want %d (Test)", nav.BoardID, m.boards[1].ID)
+	}
+}
+
+// View must render board names with CJK titles intact and not panic on
+// zero-width terminal (some test runners report 0,0 for size).
+func TestBoardList_ViewRendersWithoutPanic(t *testing.T) {
+	m, _ := newBoardListFixture(t)
+	out := m.View()
+	for _, want := range []string{"看板列表", "ChitChat", "Test", "Welcome"} {
+		if !contains(out, want) {
+			t.Errorf("View missing %q", want)
+		}
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+var _ tea.Model = boardListModel{}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_board_list_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:49:58Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package tui
+
+import (
+	"context"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/store"
+	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
+)
+
+func seedArticle(t *testing.T) (Deps, *store.Article) {
+	t.Helper()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "Alice")
+	board := storetest.MustBoard(t, st, "Test")
+	a, err := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "title", "line1\nline2\nline3")
+	if err != nil {
+		t.Fatalf("Create article: %v", err)
+	}
+	return Deps{Store: st, User: user, Broker: chat.NewBroker()}, a
+}
+
+func TestArticleView_LoadsArticle(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	if m.loadErr != nil {
+		t.Fatalf("loadErr = %v", m.loadErr)
+	}
+	if m.article.ID != art.ID {
+		t.Errorf("article.ID = %d, want %d", m.article.ID, art.ID)
+	}
+}
+
+func TestArticleView_BackKeys(t *testing.T) {
+	deps, art := seedArticle(t)
+	for _, key := range []string{"esc", "backspace", "left", "h"} {
+		t.Run(key, func(t *testing.T) {
+			m := newArticleViewModel(deps, art.ID)
+			_, cmd := m.Update(keyOf(key))
+			msg := runCmd(cmd)
+			nav, ok := msg.(NavigateMsg)
+			if !ok {
+				t.Fatalf("got %T, want NavigateMsg", msg)
+			}
+			if nav.To != ScreenBoardView {
+				t.Errorf("To = %v, want ScreenBoardView", nav.To)
+			}
+			if nav.BoardID != art.BoardID {
+				t.Errorf("BoardID = %d, want %d", nav.BoardID, art.BoardID)
+			}
+		})
+	}
+}
+
+// '+' / '-' / '=' open the inline push input with the right kind.
+func TestArticleView_OpenPushKinds(t *testing.T) {
+	cases := []struct {
+		key  string
+		kind store.PushKind
+	}{
+		{"+", store.PushKindPush},
+		{"-", store.PushKindBoo},
+		{"=", store.PushKindArrow},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			deps, art := seedArticle(t)
+			m := newArticleViewModel(deps, art.ID)
+			model, _ := m.Update(keyOf(tc.key))
+			got := model.(articleViewModel)
+			if !got.pushing {
+				t.Errorf("pushing=false after %q", tc.key)
+			}
+			if got.pushKind != tc.kind {
+				t.Errorf("pushKind = %s, want %s", got.pushKind, tc.kind)
+			}
+		})
+	}
+}
+
+// PushAddedMsg for a different article must NOT mutate this view —
+// guards against the broadcast-to-all + filter-by-id pattern from Step 7.
+func TestArticleView_IgnoresUnrelatedPush(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+
+	model, _ := m.Update(PushAddedMsg{
+		ArticleID:  art.ID + 999, // some other article
+		UserUserID: "bob",
+		Kind:       string(store.PushKindPush),
+		Body:       "irrelevant",
+	})
+	got := model.(articleViewModel)
+	if len(got.pushes) != 0 {
+		t.Errorf("appended unrelated push: got %d, want 0", len(got.pushes))
+	}
+}
+
+// PushAddedMsg for THIS article triggers a re-fetch so timestamps and
+// recommend_score reflect canonical DB state.
+func TestArticleView_AcceptsRelatedPush(t *testing.T) {
+	deps, art := seedArticle(t)
+	// Insert a push directly so the re-fetch sees something.
+	if _, err := deps.Store.Pushes().Create(context.Background(), art.ID, deps.User.ID, deps.User.UserID, store.PushKindPush, "from outside"); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	m := newArticleViewModel(deps, art.ID)
+	// At this point m.pushes has 1 from the constructor's load.
+	if len(m.pushes) != 1 {
+		t.Fatalf("constructor loaded %d pushes, want 1", len(m.pushes))
+	}
+
+	// Insert a SECOND push externally, then fire PushAddedMsg.
+	if _, err := deps.Store.Pushes().Create(context.Background(), art.ID, deps.User.ID, deps.User.UserID, store.PushKindBoo, "another"); err != nil {
+		t.Fatalf("seed push 2: %v", err)
+	}
+	model, _ := m.Update(PushAddedMsg{ArticleID: art.ID, UserUserID: "bob", Kind: "boo", Body: "another"})
+	got := model.(articleViewModel)
+
+	if len(got.pushes) != 2 {
+		t.Errorf("after PushAddedMsg: %d pushes, want 2", len(got.pushes))
+	}
+	if got.article.RecommendScore != 0 { // +1 push then -1 boo
+		t.Errorf("RecommendScore = %d, want 0", got.article.RecommendScore)
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_article_view_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:50:02Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run TUI tests with race detector
+
+`go test -race ./internal/tui/... 2>&1 | tail -30`
+
+```text
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	1.850s
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:50:08Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:50:08Z)**_
+
+All TUI tests pass. Running the full suite + coverage, then writing `docs/testing.md`.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:50:34Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Full test run
+
+`go test -race -count=1 ./... 2>&1 | tail -15`
+
+```text
+?   	github.com/daviddwlee84/sshbbs/cmd/sshbbs	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/auth	22.661s
+ok  	github.com/daviddwlee84/sshbbs/internal/chat	1.803s
+?   	github.com/daviddwlee84/sshbbs/internal/server	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/store	1.683s
+?   	github.com/daviddwlee84/sshbbs/internal/store/storetest	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	2.230s
+?   	github.com/daviddwlee84/sshbbs/internal/version	[no test files]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:50:38Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Coverage summary
+
+`go test -cover ./... 2>&1 | tail -15`
+
+```text
+	github.com/daviddwlee84/sshbbs/cmd/sshbbs		coverage: 0.0% of statements
+ok  	github.com/daviddwlee84/sshbbs/internal/auth	2.535s	coverage: 81.8% of statements
+ok  	github.com/daviddwlee84/sshbbs/internal/chat	1.798s	coverage: 84.5% of statements
+	github.com/daviddwlee84/sshbbs/internal/server		coverage: 0.0% of statements
+ok  	github.com/daviddwlee84/sshbbs/internal/store	1.562s	coverage: 74.7% of statements
+	github.com/daviddwlee84/sshbbs/internal/store/storetest		coverage: 0.0% of statements
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	1.075s	coverage: 14.4% of statements
+?   	github.com/daviddwlee84/sshbbs/internal/version	[no test files]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:50:45Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:51:22Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+# Testing strategy
+
+We follow the conservative pyramid recommended by the bubbletea / wish
+ecosystem: lots of plain Go tests at the bottom, a handful of focused
+integration tests in the middle, and a thin layer of end-to-end smoke
+tests on top. **No `teatest` dependency** — that package lives under
+`x/exp` (experimental) and we don't want our core test strategy depending
+on it.
+
+## Layers
+
+### Layer 1 — Pure Go unit tests (most of our coverage)
+
+Anything that doesn't need an SSH session or a TUI program. Tested with
+the standard library `testing` and run under `-race`.
+
+| Area | Files | What it covers |
+|------|-------|----------------|
+| `auth` | `internal/auth/auth_test.go` | Register validation, bcrypt round-trip, login + `NoteLogin`, case-insensitive lookup |
+| `store` | `internal/store/*_test.go` | Migrations idempotency, repo CRUD for boards/articles/pushes/water_balloons, **push score atomicity under N concurrent inserts**, inbox ordering, COLLATE NOCASE behaviour |
+| `chat` | `internal/chat/broker_test.go` | Register / Unregister / 雙開 (multi-session), `Send`/`SendToAll` semantics, sender exclusion, **concurrent register/unregister/send stress** |
+
+Coverage today: `auth` 81%, `chat` 84%, `store` 74%.
+
+### Layer 2 — Bubble Tea `Update()` tests
+
+Direct calls to a model's `Update` with synthetic `tea.KeyMsg` values, asserting
+the returned model state and the `tea.Msg` produced by the `tea.Cmd`. No PTY,
+no real `tea.Program`, no goroutines. This is what catches keybinding
+regressions like the h/l navigation work.
+
+| File | Focus |
+|------|-------|
+| `internal/tui/screen_main_menu_test.go` | Cursor movement & clamping; `enter`/`l`/`right`/`space`/`1`-`3` all route correctly; `3` quits |
+| `internal/tui/screen_board_list_test.go` | All four back-keys (`esc`/`backspace`/`left`/`h`) → `ScreenMainMenu`; all four forward-keys (`enter`/`space`/`right`/`l`) → `ScreenBoardView` with the right `BoardID` |
+| `internal/tui/screen_article_view_test.go` | Back-key parity; `+`/`-`/`=` open the inline push input with the right kind; `PushAddedMsg` for an unrelated article is ignored; for the current article triggers a re-fetch |
+
+Pattern, distilled (see `keyOf` and `runCmd` helpers in
+`screen_main_menu_test.go`):
+
+\```go
+m := newBoardListModel(deps)
+_, cmd := m.Update(keyOf("h"))
+nav := runCmd(cmd).(NavigateMsg)
+if nav.To != ScreenMainMenu { t.Errorf(...) }
+\```
+
+We test in the same package (`package tui`, not `tui_test`) so we can
+reach the unexported screen constructors. This is the standard Go pattern
+for testing intra-package types and is how the bubbletea project itself
+tests its sub-models.
+
+### Layer 3 — SSH + middleware integration (deferred)
+
+`charmbracelet/wish` ships `wish/testsession` for in-process SSH server
+tests. Pattern:
+
+\```go
+addr := testsession.Listen(t, srv)
+sess, _ := testsession.NewClientSession(t, addr, &gossh.ClientConfig{...})
+sess.Run("")
+\```
+
+We **don't have these yet** — currently the only Layer-3 coverage is the
+auth round-trip in `auth_test.go` (which exercises bcrypt + Users repo
+together). If middleware composition or password-auth hand-off ever
+breaks, this is where to add the test.
+
+### Layer 4 — End-to-end (PTY + real ssh)
+
+Driven by `expect`-based scripts during development. Scripts in
+`/tmp/sshbbs_*.exp` (not committed; ad-hoc) covered the major flows:
+- `sshbbs_register_test.exp` — SSH user `new` register flow
+- `sshbbs_login_test.exp` — correct + wrong password
+- `sshbbs_browse_test.exp` — board list / view / article navigation
+- `sshbbs_post_test.exp` + `_newlines` — post compose with CJK + newlines
+- `sshbbs_push_solo.exp` + `_live.exp` — 推/噓/→ + live broadcast across two sessions
+- `sshbbs_wb_live.exp` + `_offline.exp` — water balloon live + replay
+- `sshbbs_hl_test.exp` — h/l navigation parity smoke test
+- `sshbbs_shutdown_test.exp` — SIGTERM during active session
+
+Promote any of these to committed Go tests using
+`golang.org/x/crypto/ssh` + `Netflix/go-expect` if regressions become
+recurring.
+
+## Running
+
+\```bash
+go test ./...                       # quick run
+go test -race ./...                 # what CI runs (always)
+go test -race -count=1 ./...        # disable result cache
+go test -cover ./...                # per-package coverage
+go test -run TestPushes -v ./internal/store/...   # focused
+\```
+
+## Conventions
+
+- **Table-driven** for keybinding parity and validation matrices.
+- **`t.TempDir()` + `storetest.New(t)`** for any test that needs a DB.
+  Never share stores across tests.
+- **`-race`** is mandatory; the `pushes` and `chat.broker` tests exist
+  partly as race-detector bait.
+- **No flake budget**: tests must be deterministic. Time-sensitive cases
+  use `time.Sleep(15ms)` where ordering matters; if a test starts
+  flaking, fix the root cause rather than retry.
+- **Don't golden-file the TUI views.** ANSI escape sequences vary by
+  color profile and break in CI. Assert on string contents instead
+  (e.g. `contains(out, "看板列表")`).
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/testing.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:51:22Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/Makefile has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:51:25Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/README.md has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:51:50Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Final test run + count
+
+`go test -race -count=1 ./... 2>&1 | tail -8 && echo "--- counts ---" && grep -rE '^func Test' internal/ | wc -l`
+
+```text
+?   	github.com/daviddwlee84/sshbbs/cmd/sshbbs	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/auth	22.210s
+ok  	github.com/daviddwlee84/sshbbs/internal/chat	2.017s
+?   	github.com/daviddwlee84/sshbbs/internal/server	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/store	2.093s
+?   	github.com/daviddwlee84/sshbbs/internal/store/storetest	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	2.109s
+?   	github.com/daviddwlee84/sshbbs/internal/version	[no test files]
+--- counts ---
+      46
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:51:56Z)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="TaskUpdate"><details>
+<summary>Tool use: **TaskUpdate**</summary>
+
+```text
+Updated task #13 status
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:52:18Z)**_
+
+Both tasks done.
+
+## 1. h/l 導航統一
+
+加在這些畫面（form 類保持不動，避免跟編輯衝突）：
+
+| 畫面 | 改動 |
+|------|------|
+| `screen_main_menu` | `l`/`right` = Enter（選擇選單項） |
+| `screen_board_list` | `h`/`left` = back to main menu |
+| `screen_board_view` | `h`/`left` = back to board list |
+| `screen_article_view` | （原本就有 `h` back，無需改）|
+| `screen_wb` (inbox) | `h`/`left` = back；`l`/`right`/`Enter` = reply（等同 `r`）|
+
+7 個 expect smoke tests 全過，包括最深的「main → boards → board → article → 一路 `h` 回主選單」。
+
+## 2. 測試策略
+
+採用兩位 advisor 一致建議的金字塔（避開 experimental 的 `teatest`）：
+
+| Layer | 內容 | 檔案 |
+|-------|------|------|
+| 1 純 Go | repo CRUD、auth、broker | `internal/{auth,store,chat}/*_test.go` |
+| 2 Bubble Tea `Update()` | 直接呼叫 `m.Update(keyMsg)` 斷言 NavigateMsg | `internal/tui/screen_*_test.go` |
+| 3 wish/testsession | （未做，列在 doc 中） | — |
+| 4 PTY E2E | 開發過程 expect 腳本 | `/tmp/sshbbs_*.exp` |
+
+**重要設計決定：**
+- `chat.Session.Program` 從 `*tea.Program` 改成 `Sender interface { Send(tea.Msg) }`，讓 broker 可以用 fakeSender 測（單點變動，server.go 無需改）。
+- 共用 helper `internal/store/storetest`，提供 `New(t)`、`MustUser`、`MustBoard`，每個測試一個 `t.TempDir()` SQLite。
+- Push score atomicity 用 50 個並發 goroutine 撞同一篇文章驗證原子性（`-race` 跑得過 → 沒有 lost update）。
+- TUI tests 寫在 `package tui`（內部測試），可以直接呼叫 `newBoardListModel` 等未匯出建構函式。
+
+**結果：**
+- 46 個測試函式
+- 全部 `go test -race ./...` pass
+- Coverage：`auth` 81.8% / `chat` 84.5% / `store` 74.7% / `tui` 14.4% (示範性，3 個關鍵 screen)
+- `Makefile` 加 `make test-race` / `make cover`
+- 詳細策略寫在 `docs/testing.md`
+
+要我 commit 這些嗎？
+
+---
+
+_**User (2026-04-29 07:53:28Z)**_
+
+sure
+
+---
+
+_**Agent (claude-opus-4-7 2026-04-29 07:53:32Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:53:33Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check working tree status
+
+`git status`
+
+```text
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+	modified:   Makefile
+	modified:   README.md
+	modified:   internal/chat/broker.go
+	modified:   internal/tui/screen_board_list.go
+	modified:   internal/tui/screen_board_view.go
+	modified:   internal/tui/screen_main_menu.go
+	modified:   internal/tui/screen_wb.go
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	docs/testing.md
+	internal/chat/broker_test.go
+	internal/store/articles_test.go
+	internal/store/boards_test.go
+	internal/store/pushes_test.go
+	internal/store/store_test.go
+	internal/store/storetest/
+	internal/store/waterballoons_test.go
+	internal/tui/screen_article_view_test.go
+	internal/tui/screen_board_list_test.go
+	internal/tui/screen_main_menu_test.go
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:53:34Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Diff stat
+
+`git diff --stat`
+
+```text
+ .../2026-04-29_06-32-27Z-ptt-bbs-user-register.md  | 2706 ++++++++++++++++++++
+ Makefile                                           |    6 +
+ README.md                                          |    4 +
+ internal/chat/broker.go                            |   13 +-
+ internal/tui/screen_board_list.go                  |    4 +-
+ internal/tui/screen_board_view.go                  |    6 +-
+ internal/tui/screen_main_menu.go                   |    4 +-
+ internal/tui/screen_wb.go                          |    8 +-
+ 8 files changed, 2737 insertions(+), 14 deletions(-)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:53:34Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Recent commits
+
+`git log --oneline -5`
+
+```text
+d4f7369 Implement P0 PTT-style SSH BBS over wish + bubbletea
+8e2b978 Init
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:53:42Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:53:45Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Scan transcript for secrets
+
+`grep -E -n 'BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}' .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md | head -5 && echo "--- scan done ---"`
+
+```text
+--- scan done ---
+```
+</details></tool-use>

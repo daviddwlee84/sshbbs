@@ -33,7 +33,7 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "backspace":
+		case "esc", "backspace", "left", "h":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
 		case "up", "k":
 			if m.cursor > 0 {
@@ -99,7 +99,7 @@ func (m boardListModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ or j/k · Enter/→ open · Esc back · Ctrl+C disconnect"))
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l open · Esc/←/h back · Ctrl+C disconnect"))
 	b.WriteString("\n")
 	return b.String()
 }

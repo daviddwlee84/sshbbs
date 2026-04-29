@@ -47,7 +47,7 @@ func (m mainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 			return m, nil
-		case "enter", " ":
+		case "enter", " ", "right", "l":
 			it := m.items[m.cursor]
 			if it.to == -1 {
 				return m, tea.Quit
@@ -107,7 +107,7 @@ func (m mainMenuModel) View() string {
 	}
 
 	b.WriteString("\n  ")
-	b.WriteString(StyleHelp.Render("↑/↓ or j/k to move · Enter to choose · 1-3 jump · q to quit"))
+	b.WriteString(StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-3 jump · q quit"))
 	b.WriteString("\n")
 	return b.String()
 }

@@ -80,10 +80,14 @@ docs/ptt_trace_code/    notes mapping pttbbs concepts to our schema
 ```bash
 make build              # build the binary
 make test               # run tests
+make test-race          # race detector (CI standard)
+make cover              # coverage by package
 make db-reset           # delete the SQLite DB
 make tidy               # go mod tidy
 make fmt vet            # gofmt + go vet
 ```
+
+See `docs/testing.md` for the layered testing strategy.
 
 ## Deferred / future work
 
