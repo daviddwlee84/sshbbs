@@ -13,6 +13,7 @@ A simplified PTT-style BBS served over SSH. Built with
 > Re-record with `./scripts/record-demo.sh`.
 
 Implements the MUST-HAVE feature set of the planning doc:
+
 - Account register + login over SSH (bcrypt-hashed passwords)
 - Default boards: `Welcome`, `Test`, `ChitChat`
 - Read & post articles (UTF-8, CJK-aware widths via `go-runewidth`)
@@ -34,6 +35,7 @@ ssh alice@localhost -p 2222   # use the password you registered with
 ```
 
 Inside the TUI:
+
 - `↑`/`↓` or `j`/`k` to move, `Enter` to select
 - `p` in a board view to post
 - `+` / `-` / `=` in an article view for 推 / 噓 / →
@@ -58,13 +60,17 @@ ssh bob@localhost -p 2222
 ## Common gotchas
 
 - **`Host key verification failed`** after running `make hostkey` again:
+
   ```bash
   ssh-keygen -R '[localhost]:2222'
   ```
+
 - **CJK looks like garbage**: the client terminal must be UTF-8.
+
   ```bash
   echo $LANG     # should match *.UTF-8
   ```
+
 - **`SQLITE_BUSY`** under high write load: the pure-Go driver is slower than
   the CGO `mattn/go-sqlite3`. WAL + a 5s busy_timeout + a process-level
   `writeMu` keeps us comfortable for dozens of users; swap drivers if it bites.
@@ -96,18 +102,11 @@ make fmt vet            # gofmt + go vet
 
 See `docs/testing.md` for the layered testing strategy.
 
-## Deferred / future work
-
-See `docs/ptt_trace_code/00_overview.md` for what we deliberately don't
-implement, and the project plan
-(`/Users/.claude/plans/ptt-bbs-user-register-account-gentle-cookie.md` if
-you have it locally) for the P1 / P2 backlog.
-
-<!-- project-knowledge-harness:readme-roadmap -->
-<!-- Snippet for project's README.md, placed near other meta sections like
-     "Customization" or "Contributing". -->
-
 ## Roadmap & lessons learned
+
+> See `docs/ptt_trace_code/00_overview.md` for what we deliberately don't
+> implement, and the project plan
+> `./.claude/plans/ptt-bbs-user-register-account-gentle-cookie.md` for the P1 / P2 backlog.
 
 Forward-looking work — long-term ideas, deferred items, things needing
 evaluation — lives in [`TODO.md`](TODO.md), prioritised P1 → P3 with effort
@@ -118,4 +117,10 @@ Backward-looking knowledge — past traps and non-obvious debugging — lives in
 [`pitfalls/`](pitfalls/), titled by symptom so future-you can grep the error
 message and land on the root cause + workaround instead of re-debugging from
 scratch.
-<!-- project-knowledge-harness:readme-roadmap --> (end)
+
+## Resources
+
+- [ptt/pttbbs: PTT BBS source code](https://github.com/ptt/pttbbs)
+  - [ptt/pttbbs | DeepWiki](https://deepwiki.com/ptt/pttbbs)
+  - [Home · ptt/pttbbs Wiki](https://github.com/ptt/pttbbs/wiki)
+- [批踢踢 - 維基百科，自由的百科全書](https://zh.wikipedia.org/zh-tw/%E6%89%B9%E8%B8%A2%E8%B8%A2)
