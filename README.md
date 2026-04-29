@@ -102,3 +102,20 @@ See `docs/ptt_trace_code/00_overview.md` for what we deliberately don't
 implement, and the project plan
 (`/Users/.claude/plans/ptt-bbs-user-register-account-gentle-cookie.md` if
 you have it locally) for the P1 / P2 backlog.
+
+<!-- project-knowledge-harness:readme-roadmap -->
+<!-- Snippet for project's README.md, placed near other meta sections like
+     "Customization" or "Contributing". -->
+
+## Roadmap & lessons learned
+
+Forward-looking work — long-term ideas, deferred items, things needing
+evaluation — lives in [`TODO.md`](TODO.md), prioritised P1 → P3 with effort
+estimates (S/M/L/XL). Items with accompanying research, design notes, or paused
+troubleshooting link to a corresponding [`backlog/<slug>.md`](backlog/) doc.
+
+Backward-looking knowledge — past traps and non-obvious debugging — lives in
+[`pitfalls/`](pitfalls/), titled by symptom so future-you can grep the error
+message and land on the root cause + workaround instead of re-debugging from
+scratch.
+<!-- project-knowledge-harness:readme-roadmap --> (end)

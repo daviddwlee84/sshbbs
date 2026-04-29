@@ -16469,3 +16469,1152 @@ Committed `78bc2cc`. Three root causes, all fixed:
 | GIF showed 5 pushes / DB had 0 (the *real* bug I almost missed) | Stale `go run ./cmd/sshbbs` from your earlier manual run was holding port 2222 with an open DB fd to the deleted inode; my `pkill -f "$BIN"` matched only the absolute-path binary, not the `go run` argv | `lsof -ti :2222 \| xargs kill -9` — kill by port, not by argv |
 
 Demo: 31s → 21s, 388KB → 339KB, and now matches your real-terminal screenshot.
+
+---
+
+_**User (2026-04-29 08:22:34Z)**_
+
+<command-message>project-knowledge-harness</command-message>
+<command-name>/project-knowledge-harness</command-name>
+<command-args>把我們一開始的Todo分priority列到TODO.md裡面 然後已實現的(must have part)打勾 方便我們繼續實現後續features</command-args>
+
+_**User (2026-04-29 08:22:34Z)**_
+
+Base directory for this skill: /Users/daviddwlee84/.claude/skills/project-knowledge-harness
+
+# project-knowledge-harness
+
+A lightweight, file-based memory harness for any software project.
+
+Three surfaces, sharply separated by **time direction** and **access pattern**:
+
+| Surface | Time | Question it answers | Access pattern |
+|---|---|---|---|
+| `TODO.md` | Future | "What might we do later?" | Read top to bottom (priority lanes) |
+| `backlog/<slug>.md` | Future | "What was the analysis behind this idea?" | Indexed from `TODO.md` |
+| `pitfalls/<slug>.md` | **Past** | **"I see error X — has this happened before?"** | **Grep symptom keywords** |
+
+Plus, in projects that already have agent contracts, `AGENTS.md` Hard
+invariants answer "What rules MUST agents follow?". Pitfalls *graduate* to
+Hard invariants when serious enough — see
+[`references/when-to-add-docs.md`](references/when-to-add-docs.md).
+
+## When to use this skill
+
+Use this skill when the user surfaces any of:
+
+- A long-term TODO list with no home, or a messy `TODO.md` that needs
+  structure (signals: "where should ideas go?", "maybe later", "工程量太大需要再評估")
+- A debugging session worth saving (signals: "keep solving the same problem
+  twice", "save this troubleshooting", "踩過的坑", "TROUBLESHOOTING.md
+  scattered across docs/")
+- A request to consolidate `IDEAS.md` / `ROADMAP.md` / `WISHLIST.md` /
+  `LESSONS.md` files
+
+Do NOT use this skill for active sprint planning (use issue trackers),
+ephemeral agent scratchpads (use `.claude/plans/`), or current feature
+documentation (use `docs/`).
+
+## How to apply this skill (default workflow)
+
+The skill bundles five scripts and several templates. **Default to the
+init script** for setup, and **default to `add-todo.sh` / `sweep-inbox.sh`
+for capture** rather than asking the agent to edit `TODO.md` by hand.
+
+```
+scripts/
+  init.sh         # one-shot setup of TODO.md + backlog/ + pitfalls/
+                  # + agent guidance + README snippet
+  todo-kanban.sh  # validate TODO.md format and render kanban-style board
+  add-todo.sh     # insert a structured entry into the right ## P* lane
+  promote-todo.sh # move an active TODO item to ## Done with the right syntax
+  sweep-inbox.sh  # triage backlog/inbox.md into TODO.md via add-todo.sh
+```
+
+### 1. Run `scripts/init.sh` against the target repo
+
+```sh
+scripts/init.sh \
+  --target /path/to/project \
+  --project-name "My Project" \
+  --deployment chezmoi   # or npm | pip | docker | none
+```
+
+The script:
+
+1. Creates `TODO.md`, `backlog/README.md`, `pitfalls/README.md` from
+   `assets/*.template`, substituting placeholders.
+2. Appends an agent-guidance snippet to `AGENTS.md` / `CLAUDE.md` (auto-detected,
+   override with `--agent-contract`).
+3. Appends a "Roadmap & lessons learned" section to `README.md`.
+4. Runs `scripts/todo-kanban.sh --validate-only TODO.md` so any drift is
+   caught immediately.
+5. Prints the deployment-exclusion lines you should add manually (it does
+   not edit ignore files — see
+   [`references/deployment-exclusion.md`](references/deployment-exclusion.md)).
+
+`init.sh` is idempotent: existing files are skipped unless `--force` is
+given, and snippets append only if a sentinel marker is missing.
+
+### 2. Mid-conversation, when the user surfaces a "maybe later" idea
+
+Signals: "maybe later", "nice to have", "if I'm interested",
+"工程量太大需要再評估", "先記下來", "not now but…".
+
+1. If `TODO.md` doesn't exist yet, run `scripts/init.sh` first.
+2. **Default path — call `scripts/add-todo.sh`** with the priority,
+   effort, title, and description. This inserts the canonical line into
+   the right `## P*` lane and re-validates. Add `--backlog` if the
+   conversation produced enough investigation that a `backlog/<slug>.md`
+   doc is worth scaffolding.
+
+   ```sh
+   scripts/add-todo.sh --priority "P?" --effort M \
+     --title "Try Rspress for docs" \
+     --description "Evaluate AI-native docs framework alternative"
+   ```
+
+3. **Quick-capture path — append to `backlog/inbox.md`** when the user
+   isn't sure of priority/effort yet, or is mid-thought:
+
+   ```sh
+   echo "- $UNSTRUCTURED_THOUGHT" >> backlog/inbox.md
+   ```
+
+   Later (this session or next), run `scripts/sweep-inbox.sh` to
+   formalize the loose lines into `TODO.md` one at a time. The sweeper
+   prompts for missing fields per line; in `--batch` mode it only
+   processes lines that already have `priority=… effort=… title="…"
+   description="…"` pairs and leaves ambiguous ones in place.
+
+4. **Manual edit path — only when scripts can't help.** Use the syntax
+   from [`references/tag-schema.md`](references/tag-schema.md) and run
+   `scripts/todo-kanban.sh --validate-only` afterwards.
+
+5. If you wrote a `backlog/<slug>.md` (either via `--backlog` or by
+   hand), make sure the TODO line ends with
+   ` → [research](backlog/<slug>.md)` so the index points to the doc.
+
+### 3. Mid-conversation, when you finish debugging something tricky
+
+Signals: "phew, that took a while", "weird, the error didn't say anything
+about X", "this is the third time we've hit this", or you find yourself
+reconstructing context that isn't in any doc.
+
+1. Create `pitfalls/<symptom-slug>.md` immediately from
+   `assets/pitfall-doc.md.template`, while the trace is fresh. Title the
+   doc by the **symptom**, not the root cause — you'll search by what
+   you're seeing, not by what you eventually learned.
+2. Copy verbatim error messages — never paraphrase, it kills grep-ability.
+3. If the trap is severe (silent corruption / cross-machine recurrence /
+   non-obvious workaround), surface it: "should this graduate to a Hard
+   invariant in AGENTS.md?" — see
+   [`references/when-to-add-docs.md`](references/when-to-add-docs.md).
+
+### 4. When implementing a `TODO.md` item
+
+In the same commit:
+
+1. Run `scripts/promote-todo.sh --title "<substring>" --summary "<what shipped>"`.
+   It removes the active line and inserts the dated `Done` entry, then
+   re-validates. It refuses to run if the substring matches zero or more
+   than one active item.
+2. If a `backlog/<slug>.md` exists, set its `Status: shipped` (don't
+   delete — historical record may inform adjacent decisions).
+3. If shipping uncovered a trap, write a `pitfalls/<slug>.md` for it.
+
+## When a TODO entry needs a `backlog/` doc, when a debug needs a `pitfalls/` doc
+
+Decision rules and the upgrade path to `AGENTS.md` invariants live in
+[`references/when-to-add-docs.md`](references/when-to-add-docs.md). Read it
+the first time you set up the harness; consult it again whenever you're
+unsure which surface a piece of knowledge belongs in.
+
+## Tag schema
+
+Two orthogonal axes, validated by `scripts/todo-kanban.sh`. See
+[`references/tag-schema.md`](references/tag-schema.md) for the full schema,
+useful tag combinations, and the exact validator-checked syntax.
+
+## Anti-patterns
+
+Common mistakes to avoid (e.g., spawning `IDEAS.md` alongside `TODO.md`,
+titling pitfalls by root cause, paraphrasing errors). Full list in
+[`references/anti-patterns.md`](references/anti-patterns.md).
+
+## Deployment exclusion
+
+`TODO.md`, `backlog/`, and `pitfalls/` are maintainer-facing repo metadata,
+not files to ship. Cheatsheet for chezmoi / npm / pip / Docker in
+[`references/deployment-exclusion.md`](references/deployment-exclusion.md).
+`scripts/init.sh --deployment ...` prints the exact lines to add.
+
+## Templates and bundled assets
+
+- `assets/TODO.md.template` — `TODO.md` skeleton with example items per lane
+- `assets/backlog-README.md.template` — `backlog/` index + when-to-add rules
+- `assets/backlog-doc.md.template` — single backlog doc (context-first)
+- `assets/pitfalls-README.md.template` — `pitfalls/` index + cross-reference
+  table for traps documented elsewhere
+- `assets/pitfall-doc.md.template` — single pitfall doc (symptom-first)
+- `assets/agent-guidance.md.template` — snippet for `AGENTS.md` / `CLAUDE.md`
+- `assets/readme-roadmap.md.template` — snippet for project `README.md`
+- `scripts/init.sh` — one-shot setup
+- `scripts/todo-kanban.sh` — validator + Markdown kanban renderer
+  (also supports `--json` and `--validate-only`)
+- `scripts/add-todo.sh` — structured insert into `## P*` lane;
+  `--backlog` also scaffolds `backlog/<slug>.md`
+- `scripts/promote-todo.sh` — atomic active-→-Done move with re-validation
+- `scripts/sweep-inbox.sh` — triage `backlog/inbox.md` → `add-todo.sh`
+
+## Reference implementation
+
+A live example of this harness is at
+[`daviddwlee84/dotfiles`](https://github.com/daviddwlee84/dotfiles):
+
+- `TODO.md`, `backlog/`, `pitfalls/` directories at repo root
+- `AGENTS.md` `### Long-term backlog → TODO.md + backlog/` and
+  `### Past pitfalls → pitfalls/` sections
+- `README.md` `## Roadmap & lessons learned` section
+
+
+ARGUMENTS: 把我們一開始的Todo分priority列到TODO.md裡面 然後已實現的(must have part)打勾 方便我們繼續實現後續features
+
+---
+
+_**Agent (claude-opus-4-7 2026-04-29 08:22:48Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:22:49Z)**_
+
+I'll set up the harness. First let me read the schema and templates to understand the exact format.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:22:49Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/Users/daviddwlee84/.claude/skills/project-knowledge-harness/references/tag-schema.md`
+
+```text
+1	# Tag schema (priority × effort)
+2	
+3	Two orthogonal axes prevent the "important but unimplementable" trap:
+4	
+5	## Priority
+6	
+7	- `P1` — likely next batch (you'd reach for this if you sat down today)
+8	- `P2` — worth doing, no rush
+9	- `P3` — someday / nice-to-have
+10	- `P?` — needs evaluation first; spike before committing to a priority
+11	
+12	## Effort
+13	
+14	- `S` — under an hour
+15	- `M` — half day
+16	- `L` — multi-day
+17	- `XL` — architectural; design doc required before code
+18	
+19	## Useful combinations
+20	
+21	- `P?` + `[?/L]` — explicit "unknown of size L"; the most honest tag
+22	- `P3` + `[S]` — "small enough to slip into any free moment"
+23	- `P1` + `[XL]` — warns "you said this is urgent but it's actually huge — re-scope"
+24	
+25	## Heading and item syntax (validator-checked)
+26	
+27	The bundled `scripts/todo-kanban.sh` enforces this exact form. If you change
+28	the syntax, update the script in the same commit.
+29	
+30	- Section headings, in order: `## P1`, `## P2`, `## P3`, `## P?`, `## Done`
+31	- Active items in `P1` / `P2` / `P3`:
+32	  `- [ ] **[Effort] Title** — description`
+33	- Active items in `P?`:
+34	  `- [ ] **[?/Effort] Title** — description`
+35	- Shipped items in `Done`:
+36	  `- ✅ [YYYY-MM-DD] [P#/Effort] Title — one-line shipped summary`
+37	- Optional trailing on active items:
+38	  `→ [research](backlog/<slug>.md)`
+39	
+40	Anything that is NOT a top-level `- [ ]` / `- ✅` item — prose paragraphs,
+41	blockquotes, HTML comments, `---` rules, indented sub-bullets — is ignored
+42	by the validator. Use this room for explanatory text without breaking the
+43	machine-readability of the lanes.
+44
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:22:50Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/Users/daviddwlee84/.claude/skills/project-knowledge-harness/assets/TODO.md.template`
+
+```text
+1	# TODO
+2	
+3	Long-term backlog for <PROJECT NAME>. See <LINK TO PROJECT AGENT CONTRACT, e.g. AGENTS.md or CLAUDE.md>
+4	for the maintenance workflow that agents should follow.
+5	
+6	> **For agents**: when the user surfaces an idea explicitly **not** being
+7	> implemented this session (signals: "maybe later", "nice to have",
+8	> "工程量太大需要再評估", "先記下來"), add it here with priority + effort tags.
+9	> Do not create new `ROADMAP.md` / `IDEAS.md` / `BACKLOG.md` files —
+10	> `TODO.md` is the single backlog index. Long-form research goes in
+11	> [`backlog/<slug>.md`](backlog/).
+12	
+13	<!-- Use the exact section order: P1, P2, P3, P?, Done.
+14	     The bundled scripts/todo-kanban.sh validator only inspects top-level
+15	     `- [ ]` and `- ✅` items inside these sections. Prose paragraphs,
+16	     blockquotes, indented sub-bullets, HTML comments, and `---` rules are
+17	     ignored — feel free to add inline guidance like this without breaking
+18	     machine readability. -->
+19	
+20	## P1
+21	
+22	Likely next batch — items you'd reach for if you sat down to work today.
+23	
+24	- [ ] **[S] Example small item** — short description with file paths if helpful.
+25	
+26	## P2
+27	
+28	Worth doing, no rush.
+29	
+30	- [ ] **[M] Example medium item** — link to research if non-trivial. → [research](backlog/example-medium.md)
+31	
+32	## P3
+33	
+34	Someday / nice-to-have.
+35	
+36	- [ ] **[S] Example deferred item** — low signal-to-effort, but easy.
+37	
+38	## P?
+39	
+40	Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
+41	
+42	- [ ] **[?/L] Example evaluation item** — what spike would answer the question? → [research](backlog/example-evaluation.md)
+43	
+44	## Done
+45	
+46	Recently shipped. When implementing an active item, in the same commit run:
+47	
+48	```
+49	scripts/promote-todo.sh --title "<substring>" --summary "<one-line shipped summary>"
+50	```
+51	
+52	This moves the entry here using the dated `Done` syntax and re-validates.
+53	
+54	- ✅ [2026-04-23] [P1/M] Example shipped item — one-line summary of what landed and where.
+55	
+56	<!-- Prune older entries into CHANGELOG.md once prior-year items appear here
+57	     or this section grows past ~20 entries. -->
+58
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:22:51Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Show script usage
+
+`/Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/init.sh --help 2>&1 | head -40 ; echo "---" ; /Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/add-todo.sh --help 2>&1 | head -40`
+
+```text
+Usage: init.sh [OPTIONS]
+
+Set up project-knowledge-harness files in a target project. Safe to re-run.
+
+Options:
+  --target DIR              Target project root (default: current directory)
+  --project-name NAME       Substituted into <PROJECT NAME> placeholders
+                            (default: basename of --target)
+  --deployment MECH         One of: chezmoi | npm | pip | docker | none
+                            Substituted into <DEPLOYMENT MECHANISM> /
+                            <IGNORE FILE> placeholders. Default: none.
+  --agent-contract FILE     Path (relative to --target) to the agent
+                            contract file to receive the guidance snippet.
+                            Default: auto-detect AGENTS.md, CLAUDE.md,
+                            .opencode/AGENTS.md, .cursorrules. If none
+                            exist, AGENTS.md is created.
+  --readme FILE             Path to README.md (default: README.md in target).
+                            Pass "" to skip the README snippet.
+  --force                   Overwrite TODO.md / backlog/README.md /
+                            pitfalls/README.md if they already exist.
+  --no-validate             Skip the final todo-kanban.sh validation pass.
+  -h, --help                Show this help and exit.
+
+The script never edits .gitignore / .chezmoiignore — it only prints the
+ignore rules you should add for the chosen deployment mechanism.
+---
+Usage: add-todo.sh [OPTIONS] --priority {P1|P2|P3|P?} --effort {S|M|L|XL|?} \
+                             --title TEXT --description TEXT
+
+Insert a canonically-formatted entry into TODO.md under the matching ## P*
+lane. The validator (todo-kanban.sh) is re-run after the edit; if validation
+fails, the original TODO.md is restored.
+
+Required:
+  --priority {P1|P2|P3|P?}    Lane to insert into.
+  --effort {S|M|L|XL|?}       Effort tag. `?` is only valid with `P?`.
+  --title TEXT                Item title. Must not contain `*`.
+  --description TEXT          Item description (free-form after the em-dash).
+
+Options:
+  --backlog                   Also scaffold backlog/<slug>.md from the
+                              project-knowledge-harness backlog template
+                              and append ` → [research](backlog/<slug>.md)`
+                              to the new TODO line.
+  --slug SLUG                 Override the auto-derived backlog slug.
+  --file PATH                 TODO file (default: TODO.md).
+  --backlog-dir DIR           Where to write the backlog doc (default: backlog).
+  --template PATH             Path to backlog-doc.md.template
+                              (default: looked up next to this script then
+                              under skills/local/project-knowledge-harness/assets/).
+  --validator PATH            Path to todo-kanban.sh
+                              (default: sibling script).
+  --dry-run                   Print the rewritten TODO.md to stdout and the
+                              would-be backlog doc, do not modify files.
+  -h, --help                  Show this help and exit.
+
+Exit codes:
+  0  TODO entry written and validation passed.
+  1  Bad input / file not found / validation failure / template missing.
+  2  Usage error.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:23:20Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:23:22Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Initialize the harness
+
+```bash
+/Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/init.sh \
+    --target /Volumes/Data/Program/tries/2026-04-29-ssh-bbs \
+    --project-name "sshbbs" \
+    --deployment none \
+    --agent-contract CLAUDE.md 2>&1 | tail -30
+```
+
+```text
+Project root: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+Project name: sshbbs
+Deployment:   none (N/A (no packaging — these files stay in the repo), ignore in N/A)
+Agent contract: CLAUDE.md
+README:       README.md
+
+create: TODO.md
+create: backlog/README.md
+create: pitfalls/README.md
+create: backlog/inbox.md
+append: CLAUDE.md
+append: README.md
+
+Validating TODO.md...
+OK: TODO.md passes project-knowledge-harness format
+
+Next steps:
+  1. Open TODO.md and replace the example items with real ones, or use
+     scripts/add-todo.sh to insert structured entries:
+       scripts/add-todo.sh --priority P3 --effort M \
+         --title "Title" --description "Description"
+  2. Drop loose ideas into backlog/inbox.md; formalize later via:
+       scripts/sweep-inbox.sh             # interactive
+       scripts/sweep-inbox.sh --batch     # only key=value lines
+  3. Add ignore rules above to your packaging/deployment ignore file.
+  4. Run the kanban renderer when you want a quick board view:
+       scripts/todo-kanban.sh
+  5. Promote shipped items via:
+       scripts/promote-todo.sh --title "<substring>" --summary "<what shipped>"
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:23:59Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:24:00Z)**_
+
+Now I'll replace the example items with the real plan items, marking all P0 (MUST HAVE) as shipped.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:25:09Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+# TODO
+
+Long-term backlog for sshbbs. See [CLAUDE.md](CLAUDE.md)
+for the maintenance workflow that agents should follow.
+
+> **For agents**: when the user surfaces an idea explicitly **not** being
+> implemented this session (signals: "maybe later", "nice to have",
+> "工程量太大需要再評估", "先記下來"), add it here with priority + effort tags.
+> Do not create new `ROADMAP.md` / `IDEAS.md` / `BACKLOG.md` files —
+> `TODO.md` is the single backlog index. Long-form research goes in
+> [`backlog/<slug>.md`](backlog/).
+
+<!-- Use the exact section order: P1, P2, P3, P?, Done.
+     The bundled scripts/todo-kanban.sh validator only inspects top-level
+     `- [ ]` and `- ✅` items inside these sections. Prose paragraphs,
+     blockquotes, indented sub-bullets, HTML comments, and `---` rules are
+     ignored — feel free to add inline guidance like this without breaking
+     machine readability. -->
+
+## P1
+
+Likely next batch — items you'd reach for if you sat down to work today.
+Mostly "PTT-feel polish" carried forward from the original plan's SHOULD HAVE bucket.
+
+- [ ] **[S] PTT-style extra hotkeys** — extend the table-driven keybindings to add `[`/`]` (prev/next item), `r` (reply on board view), `Q` (quit-to-menu). Tests in `internal/tui/screen_*_test.go` already follow the table pattern from h/l — add to existing tables, no new test files needed.
+- [ ] **[S] Article pagination** — long bodies need `g` (top), `G` (bottom), `PgUp`/`PgDn`. Scroll state already exists in `screen_article_view.go`; just bind keys.
+- [ ] **[S] Online-user list screen** — `chat.Broker.OnlineList()` is already implemented and covered by tests. Need a `screen_online.go` and a route from main menu (slot 3 currently is Quit — bump items).
+- [ ] **[M] Live broadcast of new articles** — mirror the `PushAddedMsg` pattern from Step 7 for new posts. `ArticleAddedMsg{BoardID, ArticleID, ...}` from `screen_post_compose.submit`; `screen_board_view` filters by `BoardID == m.board.ID`.
+- [ ] **[M] Mailbox 站內信** — distinct from water balloons (persistent threaded vs transient toast). New `mail` table + `screen_mail_*.go`. Cross-cutting with friends/blocklist (P2) but doesn't strictly depend on it.
+
+## P2
+
+Worth doing, no rush.
+
+- [ ] **[S] Soft delete for articles** — add `articles.deleted_at` column + filter in `ArticleRepo.ListByBoard`. Avoid breaking the recno-vs-uuid invariant (see `docs/ptt_trace_code/03_fileheader_dir.md`).
+- [ ] **[S] Per-board BM list in header** — `boards.bm` is already populated; just render in `screen_board_view`'s header line.
+- [ ] **[S] Seed-data CLI** — `sshbbs seed --articles 50` for demo content / load testing. Lift the SQL from `scripts/record-demo.sh` into a proper subcommand.
+- [ ] **[S] ANSI color art splash screen** — render a small lipgloss-styled banner on the welcome/main-menu screens.
+- [ ] **[M] Pager settings** — friends-only / do-not-disturb for water balloons. Bitfield on `users.attr` (currently unused) + check in `Broker.Send` before delivering.
+- [ ] **[M] Per-board attr / hidden boards** — `boards.attr` bitmap (currently always 0). Define const flags in code, gate `BoardRepo.List` on user level.
+- [ ] **[M] Public-key auth alongside password** — `wish.WithPublicKeyAuth` callback that looks up `user_keys` table. Useful for power users who don't want to type a password every time.
+- [ ] **[M] Friends / blocklist tables** — needed before pager-settings can be friends-only and before mailbox can have a blocklist. Tables: `user_friends(user_id, friend_id)`, `user_blocks(user_id, blocked_id)`.
+- [ ] **[M] Structured logging via `log/slog`** — replace the package-level `log` calls in `internal/server` with slog, add per-session correlation IDs (`session_id` from `ctx.SessionID()`).
+- [ ] **[M] Rate limiting on register / post** — token-bucket per IP for register, per-user for post. The PTT bot wave we'd inevitably attract.
+- [ ] **[M] SQLite FTS5 search across articles** — virtual table + trigger to mirror inserts. Useful even for a small archive; can be opt-in via build tag if `modernc.org/sqlite` doesn't bundle FTS5.
+
+## P3
+
+Someday / nice-to-have.
+
+- [ ] **[L] Migrate query layer to `sqlc`** — once the schema stops churning. Buys type-safe queries and removes the by-hand `scanX` helpers in repos.
+- [ ] **[L] Web read-only mirror** — read-only HTTP frontend so non-SSH users can browse / link to articles. Out of scope until the SSH side feels feature-complete.
+- [ ] **[M] Prometheus metrics endpoint** — `/metrics` HTTP listener on a separate port, exposing per-board / per-user counters from the broker + DB. Premature without an actual deployment to monitor.
+
+## P?
+
+Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
+
+- [ ] **[?/L] Article import from real PTT `.DIR` dumps** — needs spike on `Ptt-official-app/go-bbs` library quality + Big5↔UTF-8 transcoding fidelity before committing. → [research](backlog/ptt-import-spike.md)
+
+## Done
+
+Recently shipped. When implementing an active item, in the same commit run:
+
+\```
+scripts/promote-todo.sh --title "<substring>" --summary "<one-line shipped summary>"
+\```
+
+This moves the entry here using the dated `Done` syntax and re-validates.
+
+<!-- All 12 P0 (MUST HAVE) items from the original plan, plus the post-MVP
+     polish work (h/l navigation, layered test suite, VHS demo recording,
+     CLAUDE.md) that shipped in the same week. -->
+
+- ✅ [2026-04-29] [P1/S] Repo skeleton + Makefile — `go.mod`, `.gitignore`, `Makefile` (run/build/test/hostkey/db-reset/test-race/cover/demo), `scripts/gen-hostkey.sh`.
+- ✅ [2026-04-29] [P1/M] SQLite store with embedded migrations — `internal/store/`, six tables (users / boards / articles / pushes / water_balloons / schema_migrations), `migrations/0001_init.sql` + `0002_seed_boards.sql`, WAL mode, process-level `writeMu`.
+- ✅ [2026-04-29] [P1/M] Auth: register + bcrypt login — `internal/auth` Register/VerifyLogin, reserved `new` username, `auth_test.go` covering validation/duplicates/case-insensitive lookup.
+- ✅ [2026-04-29] [P1/M] Storage repos — UserRepo / BoardRepo / ArticleRepo / PushRepo / WaterBalloonRepo with the methods every P0 screen needed; full test coverage in `internal/store/*_test.go`.
+- ✅ [2026-04-29] [P1/M] wish SSH server bootstrap — `internal/server/server.go` using `bubbletea.MiddlewareWithProgramHandler` so the broker can hold `*tea.Program` refs; password-auth middleware stashes `user_id` in `ssh.Context`; SSH user `new` routes to register screen.
+- ✅ [2026-04-29] [P1/M] In-memory chat broker — `internal/chat/broker.go` with Register/Unregister/Send/SendToAll/OnlineList/LookupByUserID, `Sender` interface for testability, supports same-user multi-session ("雙開").
+- ✅ [2026-04-29] [P1/L] TUI screens (state machine) — `internal/tui/`: root + welcome/register/main_menu/board_list/board_view/article_view/post_compose/wb (inbox+compose), all driven by `NavigateMsg` through `Root.navigate`.
+- ✅ [2026-04-29] [P1/S] CJK-safe runewidth helpers — `internal/tui/runewidth.go` PadRight/PadLeft/Truncate/Width used in every list rendering; UTF-8 throughout, no Big5.
+- ✅ [2026-04-29] [P1/M] 推/噓/→ with live broadcast — inline push input in `screen_article_view`, `PushRepo.Create` runs INSERT + score-update atomically under `writeMu`, `broker.SendToAll` notifies other viewers who filter by `ArticleID` and re-fetch from DB for canonical state.
+- ✅ [2026-04-29] [P1/M] Water balloon round-trip — `WBRepo.Insert/ListUnreadFor/MarkRead`, `screen_wb` inbox + compose, live delivery via `broker.Send`, offline persistence + on-reconnect replay (drained in `server.go` after broker registration), Ctrl+U global hotkey.
+- ✅ [2026-04-29] [P1/S] Graceful shutdown — `cmd/sshbbs/main.go` with `signal.NotifyContext`, `srv.Shutdown` + broker drain (sends `tea.Quit` to each session), 3s drain timeout, deferred DB close.
+- ✅ [2026-04-29] [P1/M] `docs/ptt_trace_code/` notes + README — six trace files (overview / userec / boardheader / fileheader_dir / push_comment / water_balloon / session_userinfo) mapping pttbbs concepts to our schema; README quickstart.
+- ✅ [2026-04-29] [P1/S] Vim-style h/l navigation across non-form screens — `h`/`left` = back and `l`/`right` = enter on every list/menu screen; form screens (register/post compose/wb compose) intentionally don't bind h/l so the keys remain available for text editing.
+- ✅ [2026-04-29] [P1/L] Layered test suite (46 functions) — store repos + chat broker (concurrent-stress under `-race`) + TUI Update() tests; shared `internal/store/storetest` helper; `chat.Sender` interface refactor for mockability; strategy in `docs/testing.md`.
+- ✅ [2026-04-29] [P1/M] VHS demo recording — `scripts/record-demo.sh` + `scripts/demo.tape` produce `docs/demo.gif` / `.webm` embedded in README; fixed lipgloss color profile (`SetColorProfile(termenv.TrueColor)` in `tui/styles.go init`) so background colors render when server stdout is redirected.
+- ✅ [2026-04-29] [P1/S] CLAUDE.md authored — non-obvious architecture notes (SSH-user-as-login, ProgramHandler choice, Sender interface, broadcast-then-filter, writeMu discipline, embed scoping for migrations).
+
+<!-- Prune older entries into CHANGELOG.md once prior-year items appear here
+     or this section grows past ~20 entries. -->
+
+```
+
+```text
+<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:25:10Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Validate the new TODO.md
+
+`/Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/todo-kanban.sh --validate-only TODO.md && echo "--- VALIDATION OK ---"`
+
+```text
+OK: TODO.md passes project-knowledge-harness format
+--- VALIDATION OK ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:25:17Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:25:18Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./TODO.md`
+
+```text
+1	# TODO
+2	
+3	Long-term backlog for sshbbs. See AGENTS.md
+4	for the maintenance workflow that agents should follow.
+5	
+6	> **For agents**: when the user surfaces an idea explicitly **not** being
+7	> implemented this session (signals: "maybe later", "nice to have",
+8	> "工程量太大需要再評估", "先記下來"), add it here with priority + effort tags.
+9	> Do not create new `ROADMAP.md` / `IDEAS.md` / `BACKLOG.md` files —
+10	> `TODO.md` is the single backlog index. Long-form research goes in
+11	> [`backlog/<slug>.md`](backlog/).
+12	
+13	<!-- Use the exact section order: P1, P2, P3, P?, Done.
+14	     The bundled scripts/todo-kanban.sh validator only inspects top-level
+15	     `- [ ]` and `- ✅` items inside these sections. Prose paragraphs,
+16	     blockquotes, indented sub-bullets, HTML comments, and `---` rules are
+17	     ignored — feel free to add inline guidance like this without breaking
+18	     machine readability. -->
+19	
+20	## P1
+21	
+22	Likely next batch — items you'd reach for if you sat down to work today.
+23	
+24	- [ ] **[S] Example small item** — short description with file paths if helpful.
+25	
+26	## P2
+27	
+28	Worth doing, no rush.
+29	
+30	- [ ] **[M] Example medium item** — link to research if non-trivial. → [research](backlog/example-medium.md)
+31	
+32	## P3
+33	
+34	Someday / nice-to-have.
+35	
+36	- [ ] **[S] Example deferred item** — low signal-to-effort, but easy.
+37	
+38	## P?
+39	
+40	Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
+41	
+42	- [ ] **[?/L] Example evaluation item** — what spike would answer the question? → [research](backlog/example-evaluation.md)
+43	
+44	## Done
+45	
+46	Recently shipped. When implementing an active item, in the same commit run:
+47	
+48	```
+49	scripts/promote-todo.sh --title "<substring>" --summary "<one-line shipped summary>"
+50	```
+51	
+52	This moves the entry here using the dated `Done` syntax and re-validates.
+53	
+54	- ✅ [2026-04-23] [P1/M] Example shipped item — one-line summary of what landed and where.
+55	
+56	<!-- Prune older entries into CHANGELOG.md once prior-year items appear here
+57	     or this section grows past ~20 entries. -->
+58
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:26:50Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+# TODO
+
+Long-term backlog for sshbbs. See [CLAUDE.md](CLAUDE.md)
+for the maintenance workflow that agents should follow.
+
+> **For agents**: when the user surfaces an idea explicitly **not** being
+> implemented this session (signals: "maybe later", "nice to have",
+> "工程量太大需要再評估", "先記下來"), add it here with priority + effort tags.
+> Do not create new `ROADMAP.md` / `IDEAS.md` / `BACKLOG.md` files —
+> `TODO.md` is the single backlog index. Long-form research goes in
+> [`backlog/<slug>.md`](backlog/).
+
+<!-- Use the exact section order: P1, P2, P3, P?, Done.
+     The bundled scripts/todo-kanban.sh validator only inspects top-level
+     `- [ ]` and `- ✅` items inside these sections. Prose paragraphs,
+     blockquotes, indented sub-bullets, HTML comments, and `---` rules are
+     ignored — feel free to add inline guidance like this without breaking
+     machine readability. -->
+
+## P1
+
+Likely next batch — items you'd reach for if you sat down to work today.
+Mostly "PTT-feel polish" carried forward from the original plan's SHOULD HAVE bucket.
+
+- [ ] **[S] PTT-style extra hotkeys** — extend the table-driven keybindings to add `[`/`]` (prev/next item), `r` (reply on board view), `Q` (quit-to-menu). Tests in `internal/tui/screen_*_test.go` already follow the table pattern from h/l — add to existing tables, no new test files needed.
+- [ ] **[S] Article pagination** — long bodies need `g` (top), `G` (bottom), `PgUp`/`PgDn`. Scroll state already exists in `screen_article_view.go`; just bind keys.
+- [ ] **[S] Online-user list screen** — `chat.Broker.OnlineList()` is already implemented and covered by tests. Need a `screen_online.go` and a route from main menu (slot 3 currently is Quit — bump items).
+- [ ] **[M] Live broadcast of new articles** — mirror the `PushAddedMsg` pattern from Step 7 for new posts. `ArticleAddedMsg{BoardID, ArticleID, ...}` from `screen_post_compose.submit`; `screen_board_view` filters by `BoardID == m.board.ID`.
+- [ ] **[M] Mailbox 站內信** — distinct from water balloons (persistent threaded vs transient toast). New `mail` table + `screen_mail_*.go`. Cross-cutting with friends/blocklist (P2) but doesn't strictly depend on it.
+
+## P2
+
+Worth doing, no rush.
+
+- [ ] **[S] Soft delete for articles** — add `articles.deleted_at` column + filter in `ArticleRepo.ListByBoard`. Avoid breaking the recno-vs-uuid invariant (see `docs/ptt_trace_code/03_fileheader_dir.md`).
+- [ ] **[S] Per-board BM list in header** — `boards.bm` is already populated; just render in `screen_board_view`'s header line.
+- [ ] **[S] Seed-data CLI** — `sshbbs seed --articles 50` for demo content / load testing. Lift the SQL from `scripts/record-demo.sh` into a proper subcommand.
+- [ ] **[S] ANSI color art splash screen** — render a small lipgloss-styled banner on the welcome/main-menu screens.
+- [ ] **[M] Pager settings** — friends-only / do-not-disturb for water balloons. Bitfield on `users` (currently no attr column) + check in `Broker.Send` before delivering.
+- [ ] **[M] Per-board attr / hidden boards** — `boards.attr` bitmap (currently always 0). Define const flags in code, gate `BoardRepo.List` on user level.
+- [ ] **[M] Public-key auth alongside password** — `wish.WithPublicKeyAuth` callback that looks up a `user_keys` table. Useful for power users who don't want to type a password every time.
+- [ ] **[M] Friends / blocklist tables** — needed before pager-settings can be friends-only and before mailbox can have a blocklist. Tables: `user_friends(user_id, friend_id)`, `user_blocks(user_id, blocked_id)`.
+- [ ] **[M] Structured logging via `log/slog`** — replace the package-level `log` calls in `internal/server` with slog, add per-session correlation IDs.
+- [ ] **[M] Rate limiting on register / post** — token-bucket per IP for register, per-user for post. The PTT bot wave we'd inevitably attract.
+- [ ] **[M] SQLite FTS5 search across articles** — virtual table + trigger to mirror inserts. Useful even for a small archive; can be opt-in via build tag if `modernc.org/sqlite` doesn't bundle FTS5.
+
+## P3
+
+Someday / nice-to-have.
+
+- [ ] **[L] Migrate query layer to `sqlc`** — once the schema stops churning. Buys type-safe queries and removes the by-hand `scanX` helpers in repos.
+- [ ] **[L] Web read-only mirror** — read-only HTTP frontend so non-SSH users can browse / link to articles. Out of scope until the SSH side feels feature-complete.
+- [ ] **[M] Prometheus metrics endpoint** — `/metrics` HTTP listener on a separate port, exposing per-board / per-user counters from the broker + DB. Premature without an actual deployment to monitor.
+
+## P?
+
+Needs a spike before committing to a real priority. Tag as `[?/Effort]`.
+
+- [ ] **[?/L] Article import from real PTT `.DIR` dumps** — needs spike on `Ptt-official-app/go-bbs` library quality + Big5↔UTF-8 transcoding fidelity before committing. → [research](backlog/ptt-import-spike.md)
+
+## Done
+
+Recently shipped. When implementing an active item, in the same commit run:
+
+\```
+scripts/promote-todo.sh --title "<substring>" --summary "<one-line shipped summary>"
+\```
+
+This moves the entry here using the dated `Done` syntax and re-validates.
+
+<!-- All 12 P0 (MUST HAVE) items from the original plan, plus the post-MVP
+     polish work (h/l navigation, layered test suite, VHS demo recording,
+     CLAUDE.md) that shipped in the same week. -->
+
+- ✅ [2026-04-29] [P1/S] Repo skeleton + Makefile — `go.mod`, `.gitignore`, `Makefile` (run/build/test/hostkey/db-reset/test-race/cover/demo), `scripts/gen-hostkey.sh`.
+- ✅ [2026-04-29] [P1/M] SQLite store with embedded migrations — `internal/store/`, six tables (users / boards / articles / pushes / water_balloons / schema_migrations), `migrations/0001_init.sql` + `0002_seed_boards.sql`, WAL mode, process-level `writeMu`.
+- ✅ [2026-04-29] [P1/M] Auth: register + bcrypt login — `internal/auth` Register/VerifyLogin, reserved `new` username, `auth_test.go` covering validation/duplicates/case-insensitive lookup.
+- ✅ [2026-04-29] [P1/M] Storage repos — UserRepo / BoardRepo / ArticleRepo / PushRepo / WaterBalloonRepo with the methods every P0 screen needed; full test coverage in `internal/store/*_test.go`.
+- ✅ [2026-04-29] [P1/M] wish SSH server bootstrap — `internal/server/server.go` using `bubbletea.MiddlewareWithProgramHandler` so the broker can hold `*tea.Program` refs; password-auth middleware stashes `user_id` in `ssh.Context`; SSH user `new` routes to register screen.
+- ✅ [2026-04-29] [P1/M] In-memory chat broker — `internal/chat/broker.go` with Register/Unregister/Send/SendToAll/OnlineList/LookupByUserID, `Sender` interface for testability, supports same-user multi-session ("雙開").
+- ✅ [2026-04-29] [P1/L] TUI screens (state machine) — `internal/tui/`: root + welcome/register/main_menu/board_list/board_view/article_view/post_compose/wb (inbox+compose), all driven by `NavigateMsg` through `Root.navigate`.
+- ✅ [2026-04-29] [P1/S] CJK-safe runewidth helpers — `internal/tui/runewidth.go` PadRight/PadLeft/Truncate/Width used in every list rendering; UTF-8 throughout, no Big5.
+- ✅ [2026-04-29] [P1/M] 推/噓/→ with live broadcast — inline push input in `screen_article_view`, `PushRepo.Create` runs INSERT + score-update atomically under `writeMu`, `broker.SendToAll` notifies other viewers who filter by `ArticleID` and re-fetch from DB for canonical state.
+- ✅ [2026-04-29] [P1/M] Water balloon round-trip — `WBRepo.Insert/ListUnreadFor/MarkRead`, `screen_wb` inbox + compose, live delivery via `broker.Send`, offline persistence + on-reconnect replay (drained in `server.go` after broker registration), Ctrl+U global hotkey.
+- ✅ [2026-04-29] [P1/S] Graceful shutdown — `cmd/sshbbs/main.go` with `signal.NotifyContext`, `srv.Shutdown` + broker drain (sends `tea.Quit` to each session), 3s drain timeout, deferred DB close.
+- ✅ [2026-04-29] [P1/M] docs/ptt_trace_code/ notes + README quickstart — six trace files (overview / userec / boardheader / fileheader_dir / push_comment / water_balloon / session_userinfo) mapping pttbbs concepts to our schema.
+- ✅ [2026-04-29] [P1/S] Vim-style h/l navigation across non-form screens — `h`/`left` = back and `l`/`right` = enter on every list/menu screen; form screens (register/post compose/wb compose) intentionally don't bind h/l so the keys remain available for text editing.
+- ✅ [2026-04-29] [P1/L] Layered test suite (46 functions) — store repos + chat broker (concurrent-stress under `-race`) + TUI Update() tests; shared `internal/store/storetest` helper; `chat.Sender` interface refactor for mockability; strategy in `docs/testing.md`.
+- ✅ [2026-04-29] [P1/M] VHS demo recording — `scripts/record-demo.sh` + `scripts/demo.tape` produce `docs/demo.gif` / `.webm` embedded in README; fixed lipgloss color profile (`SetColorProfile(termenv.TrueColor)` in `tui/styles.go init`) so background colors render when server stdout is redirected.
+- ✅ [2026-04-29] [P1/S] CLAUDE.md authored — non-obvious architecture notes (SSH-user-as-login, ProgramHandler choice, Sender interface, broadcast-then-filter, writeMu discipline, embed scoping for migrations).
+
+<!-- Prune older entries into CHANGELOG.md once prior-year items appear here
+     or this section grows past ~20 entries. -->
+
+```
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/TODO.md has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:26:51Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Validate + render kanban
+
+`/Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/todo-kanban.sh --validate-only TODO.md && echo "--- VALIDATION OK ---" && echo && echo "=== Kanban view ===" && /Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/todo-kanban.sh TODO.md`
+
+```text
+OK: TODO.md passes project-knowledge-harness format
+--- VALIDATION OK ---
+
+=== Kanban view ===
+# TODO Kanban
+
+_Source: `TODO.md`_
+
+| Lane | Count |
+|---|---:|
+| `P1` | 5 |
+| `P2` | 11 |
+| `P3` | 3 |
+| `P?` | 1 |
+| `Done` | 16 |
+
+## P1 (5)
+
+- [ ] **[S] PTT-style extra hotkeys** — extend the table-driven keybindings to add `[`/`]` (prev/next item), `r` (reply on board view), `Q` (quit-to-menu). Tests in `internal/tui/screen_*_test.go` already follow the table pattern from h/l — add to existing tables, no new test files needed.
+- [ ] **[S] Article pagination** — long bodies need `g` (top), `G` (bottom), `PgUp`/`PgDn`. Scroll state already exists in `screen_article_view.go`; just bind keys.
+- [ ] **[S] Online-user list screen** — `chat.Broker.OnlineList()` is already implemented and covered by tests. Need a `screen_online.go` and a route from main menu (slot 3 currently is Quit — bump items).
+- [ ] **[M] Live broadcast of new articles** — mirror the `PushAddedMsg` pattern from Step 7 for new posts. `ArticleAddedMsg{BoardID, ArticleID, ...}` from `screen_post_compose.submit`; `screen_board_view` filters by `BoardID == m.board.ID`.
+- [ ] **[M] Mailbox 站內信** — distinct from water balloons (persistent threaded vs transient toast). New `mail` table + `screen_mail_*.go`. Cross-cutting with friends/blocklist (P2) but doesn't strictly depend on it.
+
+## P2 (11)
+
+- [ ] **[S] Soft delete for articles** — add `articles.deleted_at` column + filter in `ArticleRepo.ListByBoard`. Avoid breaking the recno-vs-uuid invariant (see `docs/ptt_trace_code/03_fileheader_dir.md`).
+- [ ] **[S] Per-board BM list in header** — `boards.bm` is already populated; just render in `screen_board_view`'s header line.
+- [ ] **[S] Seed-data CLI** — `sshbbs seed --articles 50` for demo content / load testing. Lift the SQL from `scripts/record-demo.sh` into a proper subcommand.
+- [ ] **[S] ANSI color art splash screen** — render a small lipgloss-styled banner on the welcome/main-menu screens.
+- [ ] **[M] Pager settings** — friends-only / do-not-disturb for water balloons. Bitfield on `users` (currently no attr column) + check in `Broker.Send` before delivering.
+- [ ] **[M] Per-board attr / hidden boards** — `boards.attr` bitmap (currently always 0). Define const flags in code, gate `BoardRepo.List` on user level.
+- [ ] **[M] Public-key auth alongside password** — `wish.WithPublicKeyAuth` callback that looks up a `user_keys` table. Useful for power users who don't want to type a password every time.
+- [ ] **[M] Friends / blocklist tables** — needed before pager-settings can be friends-only and before mailbox can have a blocklist. Tables: `user_friends(user_id, friend_id)`, `user_blocks(user_id, blocked_id)`.
+- [ ] **[M] Structured logging via `log/slog`** — replace the package-level `log` calls in `internal/server` with slog, add per-session correlation IDs.
+- [ ] **[M] Rate limiting on register / post** — token-bucket per IP for register, per-user for post. The PTT bot wave we'd inevitably attract.
+- [ ] **[M] SQLite FTS5 search across articles** — virtual table + trigger to mirror inserts. Useful even for a small archive; can be opt-in via build tag if `modernc.org/sqlite` doesn't bundle FTS5.
+
+## P3 (3)
+
+- [ ] **[L] Migrate query layer to `sqlc`** — once the schema stops churning. Buys type-safe queries and removes the by-hand `scanX` helpers in repos.
+- [ ] **[L] Web read-only mirror** — read-only HTTP frontend so non-SSH users can browse / link to articles. Out of scope until the SSH side feels feature-complete.
+- [ ] **[M] Prometheus metrics endpoint** — `/metrics` HTTP listener on a separate port, exposing per-board / per-user counters from the broker + DB. Premature without an actual deployment to monitor.
+
+## P? (1)
+
+- [ ] **[?/L] Article import from real PTT `.DIR` dumps** — needs spike on `Ptt-official-app/go-bbs` library quality + Big5↔UTF-8 transcoding fidelity before committing. → [research](backlog/ptt-import-spike.md)
+
+## Done (16)
+
+- ✅ [2026-04-29] [P1/S] Repo skeleton + Makefile — `go.mod`, `.gitignore`, `Makefile` (run/build/test/hostkey/db-reset/test-race/cover/demo), `scripts/gen-hostkey.sh`.
+- ✅ [2026-04-29] [P1/M] SQLite store with embedded migrations — `internal/store/`, six tables (users / boards / articles / pushes / water_balloons / schema_migrations), `migrations/0001_init.sql` + `0002_seed_boards.sql`, WAL mode, process-level `writeMu`.
+- ✅ [2026-04-29] [P1/M] Auth: register + bcrypt login — `internal/auth` Register/VerifyLogin, reserved `new` username, `auth_test.go` covering validation/duplicates/case-insensitive lookup.
+- ✅ [2026-04-29] [P1/M] Storage repos — UserRepo / BoardRepo / ArticleRepo / PushRepo / WaterBalloonRepo with the methods every P0 screen needed; full test coverage in `internal/store/*_test.go`.
+- ✅ [2026-04-29] [P1/M] wish SSH server bootstrap — `internal/server/server.go` using `bubbletea.MiddlewareWithProgramHandler` so the broker can hold `*tea.Program` refs; password-auth middleware stashes `user_id` in `ssh.Context`; SSH user `new` routes to register screen.
+- ✅ [2026-04-29] [P1/M] In-memory chat broker — `internal/chat/broker.go` with Register/Unregister/Send/SendToAll/OnlineList/LookupByUserID, `Sender` interface for testability, supports same-user multi-session ("雙開").
+- ✅ [2026-04-29] [P1/L] TUI screens (state machine) — `internal/tui/`: root + welcome/register/main_menu/board_list/board_view/article_view/post_compose/wb (inbox+compose), all driven by `NavigateMsg` through `Root.navigate`.
+- ✅ [2026-04-29] [P1/S] CJK-safe runewidth helpers — `internal/tui/runewidth.go` PadRight/PadLeft/Truncate/Width used in every list rendering; UTF-8 throughout, no Big5.
+- ✅ [2026-04-29] [P1/M] 推/噓/→ with live broadcast — inline push input in `screen_article_view`, `PushRepo.Create` runs INSERT + score-update atomically under `writeMu`, `broker.SendToAll` notifies other viewers who filter by `ArticleID` and re-fetch from DB for canonical state.
+- ✅ [2026-04-29] [P1/M] Water balloon round-trip — `WBRepo.Insert/ListUnreadFor/MarkRead`, `screen_wb` inbox + compose, live delivery via `broker.Send`, offline persistence + on-reconnect replay (drained in `server.go` after broker registration), Ctrl+U global hotkey.
+- ✅ [2026-04-29] [P1/S] Graceful shutdown — `cmd/sshbbs/main.go` with `signal.NotifyContext`, `srv.Shutdown` + broker drain (sends `tea.Quit` to each session), 3s drain timeout, deferred DB close.
+- ✅ [2026-04-29] [P1/M] docs/ptt_trace_code/ notes + README quickstart — six trace files (overview / userec / boardheader / fileheader_dir / push_comment / water_balloon / session_userinfo) mapping pttbbs concepts to our schema.
+- ✅ [2026-04-29] [P1/S] Vim-style h/l navigation across non-form screens — `h`/`left` = back and `l`/`right` = enter on every list/menu screen; form screens (register/post compose/wb compose) intentionally don't bind h/l so the keys remain available for text editing.
+- ✅ [2026-04-29] [P1/L] Layered test suite (46 functions) — store repos + chat broker (concurrent-stress under `-race`) + TUI Update() tests; shared `internal/store/storetest` helper; `chat.Sender` interface refactor for mockability; strategy in `docs/testing.md`.
+- ✅ [2026-04-29] [P1/M] VHS demo recording — `scripts/record-demo.sh` + `scripts/demo.tape` produce `docs/demo.gif` / `.webm` embedded in README; fixed lipgloss color profile (`SetColorProfile(termenv.TrueColor)` in `tui/styles.go init`) so background colors render when server stdout is redirected.
+- ✅ [2026-04-29] [P1/S] CLAUDE.md authored — non-obvious architecture notes (SSH-user-as-login, ProgramHandler choice, Sender interface, broadcast-then-filter, writeMu discipline, embed scoping for migrations).
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:26:57Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:26:58Z)**_
+
+Validation passes (5 P1 + 11 P2 + 3 P3 + 1 P? + 16 Done). Creating the referenced backlog stub for the P? spike, then committing.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:27:01Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/Users/daviddwlee84/.claude/skills/project-knowledge-harness/assets/backlog-doc.md.template`
+
+```text
+1	# <Topic title>
+2	
+3	**Status**: P? / P1 / P2 / P3 / blocked / deferred / superseded / shipped
+4	**Effort**: S / M / L / XL
+5	**Related**: `TODO.md` · code paths · related docs
+6	
+7	## Context
+8	
+9	Why this surfaced. Trigger (conversation, bug, new tool, recurring annoyance).
+10	Date helps — "2026-04, came up while reviewing X".
+11	
+12	## Investigation
+13	
+14	What's already been tried / read / measured. **This is the section that saves
+15	future-you time.** Be specific:
+16	
+17	- Commands run + relevant output
+18	- Docs/issue/SO links read
+19	- Benchmark numbers
+20	- Error messages copy-pasted in full (not paraphrased)
+21	
+22	## Options considered
+23	
+24	| Option | Pros | Cons |
+25	|---|---|---|
+26	| A. … | … | … |
+27	| B. … | … | … |
+28	
+29	## Current blocker / open questions
+30	
+31	Why this is still on the backlog. One of:
+32	
+33	- Waiting on upstream X (link)
+34	- Need host/data Y to verify
+35	- Trade-offs unclear, need user preference
+36	- Effort estimate exceeds current budget
+37	
+38	## Decision (if any)
+39	
+40	`2026-04 deferred — waiting for X release` or
+41	`2026-04 chose option B because …`
+42	
+43	Dates matter. A 6-month-old "decided to use mise" needs re-validation.
+44	
+45	## References
+46	
+47	Issues, PRs, SO links, related discussions.
+48
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:27:35Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+# Article import from real PTT `.DIR` dumps
+
+**Status**: P? — needs spike before committing
+**Effort**: ?/L (unknown size, almost certainly large)
+**Related**: `TODO.md`, `docs/ptt_trace_code/03_fileheader_dir.md`, `internal/store/articles.go`
+
+## Context
+
+2026-04, raised when scoping P0 — explicitly deferred from the original
+plan as "P2-6". Real-PTT exports would let us bootstrap demo databases
+that look like a lived-in board, not three seeded examples. Useful for
+load testing too (a busy board has tens of thousands of articles).
+
+The format is well-documented (see `docs/ptt_trace_code/03_fileheader_dir.md`):
+`.DIR` is a packed array of fixed-width `fileheader_t` records, each
+pointing to a per-article body file in the same `boards/<brdname>/`
+directory. The challenge isn't the format — it's that pttbbs uses Big5
+internally and we committed to UTF-8.
+
+## Investigation
+
+Not started. The spike below would be the first concrete work.
+
+Things known up-front:
+
+- `Ptt-official-app/go-bbs` — Go library that reads/writes pttbbs file
+  formats. Quality and Big5-handling fidelity unknown.
+- `golang.org/x/text/encoding/traditionalchinese.Big5` — standard library
+  for Big5 transcoding. Edge cases: PTT historically used a Big5 superset
+  with custom code points for emoji-like glyphs that don't roundtrip
+  cleanly to Unicode.
+- Article addressing: pttbbs uses recno (position in `.DIR`); we use
+  auto-increment `id`. Import has to assign new IDs and either drop
+  cross-references or build a recno→id map and rewrite them.
+
+## Options considered
+
+| Option | Pros | Cons |
+|---|---|---|
+| A. Use `go-bbs` library directly | Tested against real PTT data; handles edge cases | Library quality unknown; pulls in transitive deps; might not expose Big5 transcoding cleanly |
+| B. Hand-write a `.DIR` parser using `encoding/binary` | Full control; minimal deps | More code to maintain; we'd re-discover Big5 quirks the hard way |
+| C. Skip imports, lean on the Seed-data CLI (P2 active) for synthetic content | No dependency, no maintenance | Won't help users who want to mirror an existing board |
+
+Likely answer: **A**, but only after the spike. **C** is already on the
+P2 lane and is independently useful regardless.
+
+## Spike checklist (defines the "?" in `?/L`)
+
+Before promoting from P? to P1/P2, the spike must answer:
+
+- [ ] Build a tiny CLI that reads one published PTT `.DIR` + 5 article
+      bodies via `go-bbs`. Does it work? How invasive is the integration?
+- [ ] Round-trip 100 articles' titles + bodies through Big5 → UTF-8 →
+      Big5. Identify the lossy code points. Is the loss acceptable for
+      a read-only mirror?
+- [ ] Estimate import throughput for ~10k articles. Will the existing
+      `writeMu` serialize so badly that bulk import takes hours, or do
+      we need a bulk-load path that bypasses it?
+- [ ] Decide what to do with pushes — pttbbs stores them either as
+      counters or in a separate `commentd` daemon's storage. If the
+      latter, do exports include them?
+
+## Current blocker / open questions
+
+- Need a sample `.DIR` + bodies dump from a real (or test) PTT
+  installation. Public PTT data isn't a thing; we'd need to either ask
+  someone running pttbbs locally or stand up a pttbbs instance ourselves.
+- Open: do we want imports to be append-only (per board, with a marker
+  for "imported from pttbbs at $ts") or a wholesale board-level wipe
+  + re-import? Affects schema design.
+
+## Decision (if any)
+
+None yet. Re-evaluate when someone has a concrete reason to import (e.g.
+"I want to seed the demo with the gossip board's hot posts").
+
+## References
+
+- `docs/ptt_trace_code/03_fileheader_dir.md` — our internal mapping doc
+- `Ptt-official-app/go-bbs` — the candidate library
+- `golang.org/x/text/encoding/traditionalchinese`
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/backlog/ptt-import-spike.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:27:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify all files in place + final validation
+
+`/bin/ls -la TODO.md backlog/ pitfalls/ && echo "---" && /Users/daviddwlee84/.claude/skills/project-knowledge-harness/scripts/todo-kanban.sh --validate-only TODO.md && echo "OK"`
+
+```text
+-rw-r--r--@ 1 daviddwlee84  staff  9347 Apr 29 16:26 TODO.md
+
+backlog/:
+total 24
+drwxr-xr-x@  5 daviddwlee84  staff   160 Apr 29 16:27 .
+drwxr-xr-x@ 23 daviddwlee84  staff   736 Apr 29 16:26 ..
+-rw-r--r--@  1 daviddwlee84  staff   502 Apr 29 16:23 inbox.md
+-rw-r--r--@  1 daviddwlee84  staff  3802 Apr 29 16:27 ptt-import-spike.md
+-rw-r--r--@  1 daviddwlee84  staff  2110 Apr 29 16:23 README.md
+
+pitfalls/:
+total 8
+drwxr-xr-x@  3 daviddwlee84  staff    96 Apr 29 16:23 .
+drwxr-xr-x@ 23 daviddwlee84  staff   736 Apr 29 16:26 ..
+-rw-r--r--@  1 daviddwlee84  staff  3836 Apr 29 16:23 README.md
+---
+OK: TODO.md passes project-knowledge-harness format
+OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:27:43Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check what's about to be committed
+
+`git status`
+
+```text
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+	modified:   .specstory/statistics.json
+	modified:   CLAUDE.md
+	modified:   README.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	TODO.md
+	backlog/
+	pitfalls/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:27:53Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Secret scan
+
+`grep -E -n 'BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}' .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md .specstory/statistics.json | head -3 ; echo "--- scan done ---"`
+
+```text
+--- scan done ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:28:06Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit harness
+
+```bash
+git add TODO.md backlog/ pitfalls/ CLAUDE.md README.md .specstory/ && git commit -m "$(cat <<'EOF'
+Adopt project-knowledge-harness: TODO.md + backlog/ + pitfalls/
+
+Sets up the lightweight backlog harness and seeds it with the
+priority-tagged plan we drafted before P0 implementation:
+
+- All 12 P0 (MUST HAVE) items from the original plan are checked off in
+  the Done lane, with one-line "what shipped" summaries citing the
+  packages/files that landed. Adds the post-MVP work from this week
+  (h/l navigation, layered test suite, VHS demo, CLAUDE.md) to keep the
+  Done index honest.
+- 5 P1 items lifted from the original plan's SHOULD HAVE bucket
+  (extra hotkeys, article pagination, online-user list, live new-article
+  broadcast, mailbox 站內信) — the natural next batch.
+- 11 P2 items mixing original SHOULD-HAVE polish (per-board BM, soft
+  delete, seed CLI, ANSI splash) with original NICE-TO-HAVE infra
+  (pubkey auth, board permissions, friends/blocklist, slog, rate limit,
+  FTS5 search).
+- 3 P3 items (sqlc migration, web mirror, Prometheus) — not soon.
+- 1 P? spike: PTT `.DIR` import — needs go-bbs/Big5 evaluation before
+  committing to a real lane. Backlog doc at backlog/ptt-import-spike.md
+  defines the spike checklist.
+
+CLAUDE.md and README.md got the harness's standard agent-guidance and
+Roadmap sections appended (idempotent — safe to re-run init.sh).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" && git log --oneline -5
+```
+
+```text
+[main 240180b] Adopt project-knowledge-harness: TODO.md + backlog/ + pitfalls/
+ 9 files changed, 1519 insertions(+), 5 deletions(-)
+ create mode 100644 TODO.md
+ create mode 100644 backlog/README.md
+ create mode 100644 backlog/inbox.md
+ create mode 100644 backlog/ptt-import-spike.md
+ create mode 100644 pitfalls/README.md
+240180b Adopt project-knowledge-harness: TODO.md + backlog/ + pitfalls/
+6c92939 Fix demo recording: backgrounds + tighter pacing
+b653e50 Add VHS demo recording
+9a17ad2 Initial CLAUDE.md
+c0f714c Unify h/l navigation and add layered test suite
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:28:17Z)**_
+
+Committed `240180b`. The harness is live:
+
+| Lane | Count | What's in it |
+|------|------:|-------------|
+| **Done** | 16 | All 12 P0 (MUST HAVE) from the original plan + 4 post-MVP this week (h/l nav, test suite, VHS demo, CLAUDE.md) |
+| **P1** | 5 | Most-natural next batch: extra hotkeys (`[`/`]`/`r`/`Q`), pagination, online-user list, live new-article broadcast, mailbox 站內信 |
+| **P2** | 11 | Original SHOULD-HAVE polish + NICE-TO-HAVE infra (pubkey auth, board perms, friends/blocklist, slog, rate limit, FTS5) |
+| **P3** | 3 | sqlc migration, web mirror, Prometheus |
+| **P?** | 1 | PTT `.DIR` import — backlog doc at `backlog/ptt-import-spike.md` defines the spike before promoting |
+
+**To work an item next session:**
+
+```bash
+# pick: scripts/todo-kanban.sh                         # see the board
+# build: ...
+# ship: scripts/promote-todo.sh --title "<substring>" --summary "<what shipped>"
+```
+
+The `promote-todo.sh` script atomically moves an active item to Done with the dated `✅` syntax and re-validates — so future-Claude (or future-you) just pattern-matches the workflow already established in the Done lane.
