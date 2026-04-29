@@ -33,6 +33,9 @@ test-race:
 cover:
 	go test -cover ./...
 
+demo:
+	./scripts/record-demo.sh
+
 tidy:
 	go mod tidy
 

@@ -15048,3 +15048,770 @@ Created `CLAUDE.md` (~120 lines). Focused on the **non-obvious** stuff future-Cl
 - **Screen-add convention**: NavigateMsg + Root switch case + `messages.go` constant.
 
 Skipped generic stuff (project layout, file structure, "write tests") since `ls`/`tree` covers it. README + docs/testing.md + docs/ptt_trace_code/ are referenced rather than re-summarized.
+
+---
+
+_**User (2026-04-29 07:57:57Z)**_
+
+用vhs錄一個demo GIF放在README吧
+
+---
+
+_**Agent (claude-opus-4-7 2026-04-29 07:58:11Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:58:11Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check if VHS is installed
+
+`which vhs ; vhs --version 2>&1 | head -3`
+
+```text
+/opt/homebrew/bin/vhs
+vhs version 0.11.0
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:58:51Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:58:52Z)**_
+
+VHS is installed. Let me build a small recording pipeline: setup script (resets DB, registers alice, seeds articles) → VHS tape → output GIF.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:58:54Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Make sure no server is running
+
+`pkill -f /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs 2>/dev/null; sleep 0.3; nc -z localhost 2222 && echo UP || echo DOWN`
+
+```text
+DOWN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:05Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```tape
+# Demo tape for SSH-BBS — drives a real SSH session.
+# Pre-conditions: server running on :2222, DB pre-seeded with user `alice`
+# (password `pw123456`) and a couple of articles in the Test board.
+# scripts/record-demo.sh does the setup before invoking `vhs`.
+
+Output docs/demo.gif
+
+Set Shell "bash"
+Set FontSize 14
+Set Width 1100
+Set Height 640
+Set Padding 12
+Set Theme "Catppuccin Mocha"
+Set TypingSpeed 40ms
+
+# ── login as alice ──
+Type "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null alice@localhost -p 2222"
+Enter
+Sleep 1200ms
+Type "pw123456"
+Enter
+Sleep 2s
+
+# ── main menu → boards (vim 'l' = enter) ──
+Type "l"
+Sleep 1500ms
+
+# ── board list: 'j' to Test, 'l' to open ──
+Type "j"
+Sleep 800ms
+Type "l"
+Sleep 1500ms
+
+# ── board view: 'l' opens the cursored article ──
+Type "l"
+Sleep 2s
+
+# ── article view: '+' to 推, type comment, Enter ──
+Type "+"
+Sleep 600ms
+Type "vim navigation rocks!"
+Sleep 400ms
+Enter
+Sleep 1800ms
+
+# ── '-' to 噓 ──
+Type "-"
+Sleep 400ms
+Type "(just kidding)"
+Sleep 400ms
+Enter
+Sleep 1800ms
+
+# ── 'h' walks back: article → board → board list → main menu ──
+Type "h"
+Sleep 1200ms
+Type "h"
+Sleep 1200ms
+Type "h"
+Sleep 1500ms
+
+# ── ctrl+u opens the water-balloon inbox ──
+Ctrl+U
+Sleep 1800ms
+
+# ── 'h' back to main menu, 'q' to disconnect ──
+Type "h"
+Sleep 800ms
+Type "q"
+Sleep 1500ms
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/demo.tape
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:24Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```sh
+#!/usr/bin/env bash
+# Records docs/demo.gif using VHS.
+#
+# Flow:
+#   1. Kill any running sshbbs and wipe data/bbs.db.
+#   2. Build the server.
+#   3. Boot the server, register alice (pw123456) via expect, seed two
+#      articles in the Test board, restart the server clean.
+#   4. Run `vhs scripts/demo.tape` which drives a real ssh client.
+#   5. Tear everything down.
+#
+# Run from the repo root.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+DB="$ROOT/data/bbs.db"
+HOSTKEY="$ROOT/.ssh/host_ed25519"
+BIN="$ROOT/sshbbs"
+TAPE="$ROOT/scripts/demo.tape"
+
+cleanup() {
+    if [[ -n "${SRV_PID:-}" ]] && kill -0 "$SRV_PID" 2>/dev/null; then
+        kill "$SRV_PID" 2>/dev/null || true
+        wait "$SRV_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+# Belt-and-braces: kill anything else that's bound to :2222.
+pkill -f "$BIN" 2>/dev/null || true
+sleep 0.3
+
+# Reset DB.
+rm -f "$DB" "$DB-shm" "$DB-wal" "$DB-journal"
+
+# Build.
+echo "==> building"
+go build -o "$BIN" ./cmd/sshbbs
+
+# Generate host key if missing.
+if [[ ! -f "$HOSTKEY" ]]; then
+    bash "$ROOT/scripts/gen-hostkey.sh" "$HOSTKEY"
+fi
+
+# Boot server, register alice, seed articles.
+echo "==> bootstrapping demo state"
+"$BIN" -addr=:2222 -db="$DB" -hostkey="$HOSTKEY" >/tmp/sshbbs-demo.log 2>&1 &
+SRV_PID=$!
+sleep 1
+
+expect <<'EOF' >/dev/null
+set timeout 5
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 new@localhost
+expect "password:"
+send "any\r"
+expect -re "註冊新帳號"
+send "alice\tpw123456\tAlice\tdemo@example.com\r"
+expect -re "註冊成功"
+send "\r"
+expect eof
+EOF
+
+sqlite3 "$DB" <<SQL
+INSERT INTO articles (board_id, author_id, author_userid, title, body) VALUES
+    (2, 1, 'alice', '歡迎使用 SSH-BBS',
+     '本站特色：vim 風格導覽 (h j k l)。' || char(10) ||
+     'h / ← / Esc 後退；l / → / Enter 前進。' || char(10) ||
+     '推文 + - = 對應 推 / 噓 / →。' || char(10) ||
+     'Ctrl+U 隨時打開水球收件夾。'),
+    (2, 1, 'alice', '推文示範文章',
+     '在這裡按 + 推、按 - 噓、按 = 補充箭頭。' || char(10) ||
+     '其他連線中的使用者會即時看到你的推文。');
+SQL
+
+echo "==> articles seeded:"
+sqlite3 "$DB" "SELECT id, title FROM articles;"
+
+echo "==> recording with vhs"
+mkdir -p "$ROOT/docs"
+vhs "$TAPE"
+
+echo "==> done — output at docs/demo.gif"
+ls -la "$ROOT/docs/demo.gif"
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/record-demo.sh
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Make script executable
+
+`chmod +x /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/record-demo.sh && /bin/ls -la /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/`
+
+```text
+total 24
+drwxr-xr-x@  5 daviddwlee84  staff   160 Apr 29 15:59 .
+drwxr-xr-x@ 19 daviddwlee84  staff   608 Apr 29 15:56 ..
+-rw-r--r--@  1 daviddwlee84  staff  1409 Apr 29 15:59 demo.tape
+-rwxr-xr-x@  1 daviddwlee84  staff   269 Apr 29 14:51 gen-hostkey.sh
+-rwxr-xr-x@  1 daviddwlee84  staff  2409 Apr 29 15:59 record-demo.sh
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:29Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:29Z)**_
+
+Let me peek at your example tape from the other project for any conventions to mirror.
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:30Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Look at the reference tape
+
+`/bin/ls /Volumes/Data/Program/tries/2026-04-28-sleep-helper/docs/ 2>&1 | head && echo "---" && cat /Volumes/Data/Program/tries/2026-04-28-sleep-helper/docs/demo.tape 2>&1`
+
+```text
+demo-recording.md
+demo.gif
+demo.tape
+demo.webm
+---
+# sleeper demo recording — driven by VHS (https://github.com/charmbracelet/vhs)
+#
+# Render with:
+#   vhs docs/demo.tape
+#
+# Produces docs/demo.gif (embedded in README) and docs/demo.webm
+# (higher-quality fallback for external links). See docs/demo-recording.md
+# for the full how-to and the reasoning behind these settings.
+
+Output docs/demo.gif
+Output docs/demo.webm
+
+Set Shell        "zsh"
+Set FontSize     14
+Set Width        1100
+Set Height       700
+Set Theme        "Catppuccin Mocha"
+Set TypingSpeed  60ms
+Set PlaybackSpeed 1.0
+
+# Build the binary off-camera so we don't depend on whatever PATH the
+# VHS-spawned shell happens to inherit. /tmp/sleeper is throwaway.
+Hide
+Type "cd /Volumes/Data/Program/tries/2026-04-28-sleep-helper && go build -o /tmp/sleeper ./cmd/sleeper"
+Enter
+Sleep 5s
+Type "clear"
+Enter
+Show
+
+# --seed 42        deterministic layout/file pick so re-recordings match
+# --tick 180ms     a hair slower than default (150ms); easier on the eye
+# --no-caffeinate  skip caffeinate inside VHS (no real screen to keep awake)
+Type "/tmp/sleeper --project . --seed 42 --tick 180ms --no-caffeinate"
+Enter
+
+# Default scene: vim+shell. Let it breathe so viewers see syntax highlighting,
+# fake cursor jitter, and a real `git status` cycle through.
+Sleep 7s
+
+# Tab → vim+ai. Show the chat-bubble pane.
+Tab
+Sleep 6s
+
+# Tab → vim only. Full-screen the fake editor so the syntax-highlighted
+# code is unambiguous.
+Tab
+Sleep 6s
+
+# Tab → shell only. Show the safe-cmd allowlist output on its own.
+Tab
+Sleep 5s
+
+# Esc Esc → panic key. Switches back to a plain `git status`-looking
+# scene and quietly quits. Also our cleanest end-of-recording.
+Escape
+Escape
+Sleep 1500ms
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:47Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 07:59:48Z)**_
+
+Mirroring the example's conventions (dual GIF/WEBM output, slower typing, named keys).
+
+_**Agent (claude-opus-4-7 2026-04-29 08:00:04Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```tape
+# sshbbs demo recording — driven by VHS (https://github.com/charmbracelet/vhs)
+#
+# Render with:
+#   ./scripts/record-demo.sh
+#
+# The wrapper script handles environment setup (rebuilds the binary, wipes
+# data/bbs.db, registers `alice`, seeds two demo articles, boots the
+# server) before invoking `vhs scripts/demo.tape`. The tape itself only
+# drives a real ssh client. Produces docs/demo.gif (embedded in README)
+# and docs/demo.webm (higher-quality fallback for external links).
+
+Output docs/demo.gif
+Output docs/demo.webm
+
+Set Shell        "bash"
+Set FontSize     14
+Set Width        1100
+Set Height       700
+Set Padding      14
+Set Theme        "Catppuccin Mocha"
+Set TypingSpeed  60ms
+Set PlaybackSpeed 1.0
+
+# Off-camera: clear scrollback so the recording starts on a blank prompt.
+Hide
+Type "clear"
+Enter
+Sleep 200ms
+Show
+
+# ── login as alice ─────────────────────────────────────────────────
+Type "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null alice@localhost -p 2222"
+Enter
+Sleep 1500ms
+Type "pw123456"
+Enter
+# Main menu takes a moment to render after auth.
+Sleep 2s
+
+# ── main menu → boards (vim 'l' = enter, 'h' = back) ───────────────
+Type "l"
+Sleep 1800ms
+
+# ── board list: 'j' moves cursor to Test (default order: ChitChat, Test, Welcome)
+Type "j"
+Sleep 900ms
+Type "l"
+Sleep 1800ms
+
+# ── board view: cursor sits on the newest article; 'l' opens it
+Type "l"
+Sleep 2200ms
+
+# ── article view: '+' opens the inline 推 input
+Type "+"
+Sleep 600ms
+Type "vim navigation rocks!"
+Sleep 500ms
+Enter
+Sleep 1800ms
+
+# ── '-' for 噓 with a comment
+Type "-"
+Sleep 500ms
+Type "(just kidding)"
+Sleep 500ms
+Enter
+# Score should now be 0 (one push + one boo).
+Sleep 2s
+
+# ── 'h' walks back: article → board → board list → main menu
+Type "h"
+Sleep 1300ms
+Type "h"
+Sleep 1300ms
+Type "h"
+Sleep 1500ms
+
+# ── Ctrl+U opens the water-balloon inbox from anywhere
+Ctrl+U
+Sleep 1800ms
+
+# ── 'h' back to main menu, 'q' to disconnect cleanly
+Type "h"
+Sleep 1000ms
+Type "q"
+Sleep 1500ms
+
+```
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/demo.tape has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:10Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run the recording
+
+`bash scripts/record-demo.sh 2>&1 | tail -40`
+
+```text
+Type pw123456
+Enter 1
+Sleep 2s
+Type l
+Sleep 1800ms
+Type j
+Sleep 900ms
+Type l
+Sleep 1800ms
+Type l
+Sleep 2200ms
+Type +
+Sleep 600ms
+Type vim navigation rocks!
+Sleep 500ms
+Enter 1
+Sleep 1800ms
+Type -
+Sleep 500ms
+Type (just kidding)
+Sleep 500ms
+Enter 1
+Sleep 2s
+Type h
+Sleep 1300ms
+Type h
+Sleep 1300ms
+Type h
+Sleep 1500ms
+Ctrl U
+Sleep 1800ms
+Type h
+Sleep 1000ms
+Type q
+Sleep 1500ms
+Creating docs/demo.gif...
+Creating docs/demo.webm...
+Host your GIF on vhs.charm.sh: vhs publish <file>.gif
+==> done — output at docs/demo.gif
+-rw-r--r--@ 1 daviddwlee84  staff  397491 Apr 29 16:01 /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:15Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:16Z)**_
+
+Generated docs/demo.gif (388KB) + webm. Let me preview it.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:16Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./docs/demo.gif`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:22Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect GIF duration
+
+`which ffmpeg && ffmpeg -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif 2>&1 | grep -E 'Duration|Stream' | head`
+
+```text
+/opt/homebrew/bin/ffmpeg
+  Duration: 00:00:31.40, start: 0.000000, bitrate: 101 kb/s
+  Stream #0:0: Video: gif, bgra, 1100x700 [SAR 64:64 DAR 11:7], 25 fps, 25 tbr, 100 tbn
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:32Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Extract sample frames
+
+`cd /tmp && ffmpeg -y -ss 6 -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 frame_main.png 2>&1 | tail -2 && ffmpeg -y -ss 14 -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 frame_article.png 2>&1 | tail -2 && ffmpeg -y -ss 22 -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 frame_pushed.png 2>&1 | tail -2`
+
+```text
+zoxide: detected a possible configuration issue.
+Please ensure that zoxide is initialized right at the end of your shell configuration file (usually ~/.zshrc).
+
+If the issue persists, consider filing an issue at:
+https://github.com/ajeetdsouza/zoxide/issues
+
+Disable this message by setting _ZO_DOCTOR=0.
+
+[out#0/image2 @ 0xc71048180] video:56KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.04 bitrate=N/A speed=1.08x elapsed=0:00:00.03    
+[out#0/image2 @ 0x7f4c48180] video:61KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.04 bitrate=N/A speed=0.881x elapsed=0:00:00.04    
+[out#0/image2 @ 0x917048180] video:88KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.04 bitrate=N/A speed=0.622x elapsed=0:00:00.06
+Shell cwd was reset to /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:37Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/frame_main.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:43Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/frame_article.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:01:43Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/frame_pushed.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:02Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:03Z)**_
+
+GIF captured the full flow. Embedding it in the README.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:05Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check sizes + cleanup
+
+`/bin/ls -la docs/demo.gif docs/demo.webm 2>&1 && rm -f /tmp/frame_main.png /tmp/frame_article.png /tmp/frame_pushed.png`
+
+```text
+-rw-r--r--@ 1 daviddwlee84  staff  397491 Apr 29 16:01 docs/demo.gif
+-rw-r--r--@ 1 daviddwlee84  staff  252193 Apr 29 16:01 docs/demo.webm
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:16Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/README.md has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:23Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:25Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/Makefile has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:26Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Pre-commit status
+
+`git status`
+
+```text
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+	modified:   Makefile
+	modified:   README.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	docs/demo.gif
+	docs/demo.webm
+	scripts/demo.tape
+	scripts/record-demo.sh
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:33Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:33Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check CLAUDE.md status
+
+`/bin/ls -la CLAUDE.md && git ls-files | grep CLAUDE`
+
+```text
+-rw-r--r--@ 1 daviddwlee84  staff  7321 Apr 29 15:55 CLAUDE.md
+CLAUDE.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:39Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:40Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Trace CLAUDE.md tracking state
+
+`git log --oneline -- CLAUDE.md ; git status -s CLAUDE.md ; echo "---" ; git diff --stat HEAD CLAUDE.md 2>&1 | head`
+
+```text
+9a17ad2 Initial CLAUDE.md
+---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:48Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:48Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Recent commits
+
+`git log --oneline -10`
+
+```text
+9a17ad2 Initial CLAUDE.md
+c0f714c Unify h/l navigation and add layered test suite
+d4f7369 Implement P0 PTT-style SSH BBS over wish + bubbletea
+8e2b978 Init
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:54Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:57Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Secret scan
+
+`grep -E -n 'BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}' .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md | head -3 ; echo "--- scan done ---"`
+
+```text
+--- scan done ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:02:57Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage demo work
+
+`git add docs/demo.gif docs/demo.webm scripts/demo.tape scripts/record-demo.sh Makefile README.md .specstory/ && git status --short`
+
+```text
+M  .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+M  Makefile
+M  README.md
+A  docs/demo.gif
+A  docs/demo.webm
+A  scripts/demo.tape
+A  scripts/record-demo.sh
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:03:07Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Create commit
+
+```bash
+git commit -m "$(cat <<'EOF'
+Add VHS demo recording
+
+`./scripts/record-demo.sh` (or `make demo`) tears down any running
+server, wipes the DB, rebuilds, registers `alice` via expect, seeds two
+demo articles in the Test board, then drives `vhs scripts/demo.tape`
+which ssh's in and exercises the vim-key navigation path: login →
+boards → article → 推/噓 → Ctrl+U water-balloon inbox → disconnect.
+
+Outputs docs/demo.gif (~390 KB, embedded in README) and docs/demo.webm
+(~250 KB, higher-quality fallback).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" && git log --oneline -5
+```
+
+```text
+[main 7cf6880] Add VHS demo recording
+ 7 files changed, 864 insertions(+)
+ create mode 100644 docs/demo.gif
+ create mode 100644 docs/demo.webm
+ create mode 100644 scripts/demo.tape
+ create mode 100755 scripts/record-demo.sh
+7cf6880 Add VHS demo recording
+9a17ad2 Initial CLAUDE.md
+c0f714c Unify h/l navigation and add layered test suite
+d4f7369 Implement P0 PTT-style SSH BBS over wish + bubbletea
+8e2b978 Init
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:03:16Z)**_
+
+Committed `7cf6880`. Demo pipeline:
+
+- **`scripts/demo.tape`** — VHS script that SSHs in and walks the vim-nav path (login → boards → article → 推/噓 → `Ctrl+U` inbox → quit). Mirrors the conventions from your sleep-helper tape (dual GIF/WEBM output, Catppuccin Mocha, 60ms typing).
+- **`scripts/record-demo.sh`** — wraps the full env reset: kills running servers, wipes DB, rebuilds, registers `alice` via expect, seeds two demo articles, then runs `vhs`.
+- **`docs/demo.gif`** (388 KB, 31s @ 1100×700, embedded in README).
+- **`docs/demo.webm`** (246 KB, fallback).
+- **`make demo`** target in the Makefile.
+
+Re-record any time with `make demo`. Re-running is idempotent — the wrapper resets state every run.

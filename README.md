@@ -5,6 +5,13 @@ A simplified PTT-style BBS served over SSH. Built with
 [bubbletea](https://github.com/charmbracelet/bubbletea), backed by SQLite
 (pure-Go via `modernc.org/sqlite`).
 
+![demo](docs/demo.gif)
+
+> Vim-style `h`/`j`/`k`/`l` navigation alongside arrow keys & Esc/Enter.
+> The recording above shows login → boards → article → 推/噓 → `Ctrl+U`
+> water-balloon inbox → disconnect, all driven from the keyboard.
+> Re-record with `./scripts/record-demo.sh`.
+
 Implements the MUST-HAVE feature set of the planning doc:
 - Account register + login over SSH (bcrypt-hashed passwords)
 - Default boards: `Welcome`, `Test`, `ChitChat`
