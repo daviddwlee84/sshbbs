@@ -29,13 +29,16 @@ Sleep 200ms
 Show
 
 # ── login as alice ─────────────────────────────────────────────────
-Type "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null alice@localhost -p 2222"
+# Front-load the connect: paste the long ssh command + password fast so
+# the demo gets to the actual TUI quickly. Default TypingSpeed (60ms)
+# resumes for everything below.
+Type@5ms "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null alice@localhost -p 2222"
 Enter
-Sleep 1500ms
-Type "pw123456"
+Sleep 800ms
+Type@5ms "pw123456"
 Enter
 # Main menu takes a moment to render after auth.
-Sleep 2s
+Sleep 1500ms
 
 # ── main menu → boards (vim 'l' = enter, 'h' = back) ───────────────
 Type "l"

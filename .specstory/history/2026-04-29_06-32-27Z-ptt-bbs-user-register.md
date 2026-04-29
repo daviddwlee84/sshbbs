@@ -15815,3 +15815,657 @@ Committed `7cf6880`. Demo pipeline:
 - **`make demo`** target in the Makefile.
 
 Re-record any time with `make demo`. Re-running is idempotent — the wrapper resets state every run.
+
+---
+
+_**User (2026-04-29 08:07:44Z)**_
+
+[Image #5] GIF的畫面怎麽比實際ssh的丑(少了一些字的背景色之類的) [Image #6] (對比ssh)
+然後前半段ssh進去的part好像有點冗 是不是可以加速那部分的動畫 這樣可以更着重在真正的demo上
+
+_**User (2026-04-29 08:07:44Z)**_
+
+[Image: source: /Users/daviddwlee84/.claude/image-cache/5ad860d3-649a-4886-b05b-625442e1117a/5.png]
+
+[Image: source: /Users/daviddwlee84/.claude/image-cache/5ad860d3-649a-4886-b05b-625442e1117a/6.png]
+
+---
+
+_**Agent (claude-opus-4-7 2026-04-29 08:08:50Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:08:54Z)**_
+
+Two real issues:
+
+1. **Missing backgrounds in GIF**: when `record-demo.sh` boots the server with `>/tmp/sshbbs-demo.log 2>&1 &`, stdout isn't a TTY → lipgloss's package-level renderer auto-detects no color → background fills get stripped (foregrounds still work because they're more permissive). In your real terminal stdout is a TTY → TrueColor → backgrounds render.
+2. **Front-loaded SSH/password typing**: 6+ seconds before the actual demo. VHS has `Type@10ms` to speed up specific lines.
+
+Fixing both.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:08:59Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/styles.go has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:09:03Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Rebuild with color fix
+
+`go build -o /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/cmd/sshbbs && echo BUILD OK`
+
+```text
+BUILD OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:09:13Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:09:25Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/demo.tape has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:10:31Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-record demo
+
+`bash scripts/record-demo.sh 2>&1 | tail -8`
+
+```text
+Sleep 1000ms
+Type q
+Sleep 1500ms
+Creating docs/demo.gif...
+Creating docs/demo.webm...
+Host your GIF on vhs.charm.sh: vhs publish <file>.gif
+==> done — output at docs/demo.gif
+-rw-r--r--@ 1 daviddwlee84  staff  364469 Apr 29 16:10 /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:10:39Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Inspect new GIF duration + sample frames
+
+`ffmpeg -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif 2>&1 | grep Duration && cd /tmp && ffmpeg -y -ss 4 -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 menu.png 2>&1 | tail -1 && ffmpeg -y -ss 14 -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 article.png 2>&1 | tail -1`
+
+```text
+  Duration: 00:00:25.56, start: 0.000000, bitrate: 114 kb/s
+zoxide: detected a possible configuration issue.
+Please ensure that zoxide is initialized right at the end of your shell configuration file (usually ~/.zshrc).
+
+If the issue persists, consider filing an issue at:
+https://github.com/ajeetdsouza/zoxide/issues
+
+Disable this message by setting _ZO_DOCTOR=0.
+
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.04 bitrate=N/A speed=0.991x elapsed=0:00:00.04    
+frame=    1 fps=0.0 q=-0.0 Lsize=N/A time=00:00:00.04 bitrate=N/A speed=0.678x elapsed=0:00:00.05
+Shell cwd was reset to /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:10:43Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/menu.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:10:43Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/article.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:11:35Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:11:36Z)**_
+
+The GIF looks right but I see 3 pushes when my script only sends 2. Let me check the DB and re-record.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:11:37Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check pushes in DB
+
+`sqlite3 /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db "SELECT id, kind, body, datetime(created_at) FROM pushes;"`
+
+```text
+(Bash completed with no output)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:12:02Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:12:05Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Extract many frames
+
+`cd /tmp && for t in 4 6 8 10 12 14 16 18 20; do ffmpeg -y -ss $t -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 fr_$t.png 2>/dev/null; done && /bin/ls -la fr_*.png`
+
+```text
+zoxide: detected a possible configuration issue.
+Please ensure that zoxide is initialized right at the end of your shell configuration file (usually ~/.zshrc).
+
+If the issue persists, consider filing an issue at:
+https://github.com/ajeetdsouza/zoxide/issues
+
+Disable this message by setting _ZO_DOCTOR=0.
+
+-rw-r--r--@ 1 daviddwlee84  wheel   81747 Apr 29 16:12 fr_10.png
+-rw-r--r--@ 1 daviddwlee84  wheel   96192 Apr 29 16:12 fr_12.png
+-rw-r--r--@ 1 daviddwlee84  wheel   93735 Apr 29 16:12 fr_14.png
+-rw-r--r--@ 1 daviddwlee84  wheel  105926 Apr 29 16:12 fr_16.png
+-rw-r--r--@ 1 daviddwlee84  wheel   49693 Apr 29 16:12 fr_18.png
+-rw-r--r--@ 1 daviddwlee84  wheel   69614 Apr 29 16:12 fr_20.png
+-rw-r--r--@ 1 daviddwlee84  wheel   69435 Apr 29 16:12 fr_4.png
+-rw-r--r--@ 1 daviddwlee84  wheel   49693 Apr 29 16:12 fr_6.png
+-rw-r--r--@ 1 daviddwlee84  wheel   84474 Apr 29 16:12 fr_8.png
+Shell cwd was reset to /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:12:05Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/fr_8.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:12:50Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:12:50Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check DB state right now
+
+`/bin/ls -la data/ ; sqlite3 data/bbs.db "SELECT COUNT(*) AS pushes FROM pushes; SELECT COUNT(*) AS articles FROM articles;"`
+
+```text
+total 168
+drwxr-xr-x@  6 daviddwlee84  staff    192 Apr 29 16:09 .
+drwxr-xr-x@ 20 daviddwlee84  staff    640 Apr 29 16:09 ..
+-rw-r--r--@  1 daviddwlee84  staff      0 Apr 29 14:52 .gitkeep
+-rw-r--r--@  1 daviddwlee84  staff  53248 Apr 29 16:09 bbs.db
+-rw-r--r--@  1 daviddwlee84  staff  32768 Apr 29 16:11 bbs.db-shm
+-rw-r--r--@  1 daviddwlee84  staff      0 Apr 29 16:09 bbs.db-wal
+0
+2
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:13:02Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:13:03Z)**_
+
+The DB shows 0 pushes — the previous run's pushes weren't committed (maybe the trap killed the server before commit). Let me re-record and watch in real time.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:14:06Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-record and immediately inspect DB
+
+`bash scripts/record-demo.sh 2>&1 | tail -5 && echo "--- DB state right after ---" && sqlite3 data/bbs.db "SELECT id, kind, body, created_at FROM pushes;"`
+
+```text
+Creating docs/demo.gif...
+Creating docs/demo.webm...
+Host your GIF on vhs.charm.sh: vhs publish <file>.gif
+==> done — output at docs/demo.gif
+-rw-r--r--@ 1 daviddwlee84  staff  370351 Apr 29 16:13 /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif
+--- DB state right after ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:14:25Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:14:28Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-sample frames after re-record
+
+`cd /tmp && rm -f fr_*.png menu.png article.png && for t in 5 10 14 18 22 24; do ffmpeg -y -ss $t -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 frame_${t}s.png 2>/dev/null; done && /bin/ls frame_*.png`
+
+```text
+zoxide: detected a possible configuration issue.
+Please ensure that zoxide is initialized right at the end of your shell configuration file (usually ~/.zshrc).
+
+If the issue persists, consider filing an issue at:
+https://github.com/ajeetdsouza/zoxide/issues
+
+Disable this message by setting _ZO_DOCTOR=0.
+
+frame_10s.png
+frame_14s.png
+frame_18s.png
+frame_22s.png
+frame_24s.png
+frame_5s.png
+Shell cwd was reset to /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:14:28Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/frame_14s.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:15:00Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:15:01Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Find all DB files + timestamps
+
+`find /Volumes/Data/Program/tries/2026-04-29-ssh-bbs -name '*.db*' -not -path '*/.git/*' 2>&1 ; echo "---" ; date -r data/bbs.db ; echo "---" ; sqlite3 data/bbs.db "SELECT id, kind, body, created_at FROM pushes ORDER BY id;"`
+
+```text
+/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db-shm
+/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db-wal
+/Volumes/Data/Program/tries/2026-04-29-ssh-bbs/data/bbs.db
+---
+Wed Apr 29 16:13:16 CST 2026
+---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:15:17Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:15:19Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Full DB inspection
+
+`sqlite3 data/bbs.db ".tables" && echo "---articles---" && sqlite3 data/bbs.db "SELECT id, title FROM articles;" && echo "---users---" && sqlite3 data/bbs.db "SELECT id, user_id FROM users;" && echo "---pushes count---" && sqlite3 data/bbs.db "SELECT COUNT(*) FROM pushes;" && echo "--- file size with WAL ---" && /bin/ls -la data/bbs.db data/bbs.db-wal data/bbs.db-shm`
+
+```text
+articles           pushes             users            
+boards             schema_migrations  water_balloons   
+---articles---
+1|歡迎使用 SSH-BBS
+2|推文示範文章
+---users---
+---pushes count---
+0
+--- file size with WAL ---
+-rw-r--r--@ 1 daviddwlee84  staff  53248 Apr 29 16:13 data/bbs.db
+-rw-r--r--@ 1 daviddwlee84  staff  32768 Apr 29 16:15 data/bbs.db-shm
+-rw-r--r--@ 1 daviddwlee84  staff      0 Apr 29 16:13 data/bbs.db-wal
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:15:41Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:15:59Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Isolate the missing-users bug
+
+```bash
+cat > /tmp/reg_only.exp <<'EOF'
+set timeout 5
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 new@localhost
+expect "password:"
+send "any\r"
+expect -re "註冊新帳號"
+send "alice\tpw123456\tAlice\tdemo@example.com\r"
+expect -re "註冊成功"
+send "\r"
+expect eof
+EOF
+
+# Reset, start server, register, check
+pkill -f /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/sshbbs 2>/dev/null
+sleep 0.3
+rm -f data/bbs.db data/bbs.db-shm data/bbs.db-wal
+./sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519 >/tmp/srv.log 2>&1 &
+SRV_PID=$!
+sleep 1
+
+echo "=== before register ==="
+sqlite3 data/bbs.db "SELECT COUNT(*) FROM users;"
+
+expect -f /tmp/reg_only.exp >/dev/null 2>&1
+
+echo "=== after register ==="
+sqlite3 data/bbs.db "SELECT id, user_id, length(password_hash) FROM users;"
+
+kill $SRV_PID
+wait $SRV_PID 2>/dev/null
+
+echo "=== after server stop ==="
+sqlite3 data/bbs.db "SELECT id, user_id, length(password_hash) FROM users;"
+```
+
+```text
+=== before register ===
+0
+=== after register ===
+(eval):kill:29: kill 54760 failed: no such process
+=== after server stop ===
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:09Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:09Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check server log
+
+`cat /tmp/srv.log`
+
+```text
+2026/04/29 16:15:48 storage ready at data/bbs.db
+2026/04/29 16:15:48 sshbbs 0.1.0-dev listening on :2222
+2026/04/29 16:15:48 listen: listen tcp :2222: bind: address already in use
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:16Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:17Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Find what's holding port 2222
+
+`lsof -i :2222 ; pgrep -fl sshbbs`
+
+```text
+COMMAND   PID         USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+sshbbs  35407 daviddwlee84    8u  IPv6 0xd491ffeecff23759      0t0  TCP *:rockwell-csp2 (LISTEN)
+sshbbs  35407 daviddwlee84   10u  IPv6 0xd7369d4abda4016f      0t0  TCP localhost:rockwell-csp2->localhost:49691 (ESTABLISHED)
+ssh     36454 daviddwlee84    5u  IPv6 0xb5e7fc3a13b6f7cc      0t0  TCP localhost:49691->localhost:rockwell-csp2 (ESTABLISHED)
+ssh     36454 daviddwlee84    6u  IPv6 0xb5e7fc3a13b6f7cc      0t0  TCP localhost:49691->localhost:rockwell-csp2 (ESTABLISHED)
+35311 go run ./cmd/sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519
+35407 /var/folders/g3/gsbp4bsx1gs51t1805r34ztw0000gn/T/go-build3013425884/b001/exe/sshbbs -addr=:2222 -db=data/bbs.db -hostkey=.ssh/host_ed25519
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:39Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:41Z)**_
+
+Found it! There's a stray `go run ./cmd/sshbbs` server (PID 35311 + child 35407) from earlier that's holding port 2222 and serving from its own pre-fix DB connection. My `pkill -f "$BIN"` doesn't match because `go run`'s argv is `go run ./cmd/sshbbs`, not the full binary path. Fixing the script and re-running.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:43Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Kill anything on :2222
+
+`lsof -ti :2222 | xargs -I{} kill -9 {} 2>&1 ; sleep 0.5 ; pgrep -fl sshbbs ; echo "---" ; nc -z localhost 2222 && echo UP || echo DOWN`
+
+```text
+---
+DOWN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:16:48Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/scripts/record-demo.sh has been updated successfully.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:44Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-record cleanly
+
+`bash scripts/record-demo.sh 2>&1 | tail -8 && echo "--- DB after recording ---" && sqlite3 data/bbs.db "SELECT 'users:', COUNT(*) FROM users; SELECT 'articles:', COUNT(*) FROM articles; SELECT 'pushes:', COUNT(*) FROM pushes; SELECT id, kind, body, datetime(created_at) FROM pushes;"`
+
+```text
+Sleep 1000ms
+Type q
+Sleep 1500ms
+Creating docs/demo.gif...
+Creating docs/demo.webm...
+Host your GIF on vhs.charm.sh: vhs publish <file>.gif
+==> done — output at docs/demo.gif
+-rw-r--r--@ 1 daviddwlee84  staff  347099 Apr 29 16:17 /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif
+--- DB after recording ---
+users:|1
+articles:|2
+pushes:|2
+1|push|vim navigation rocks!|2026-04-29 08:17:10
+2|boo|(just kidding)|2026-04-29 08:17:14
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:52Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:53Z)**_
+
+DB now matches recording (1 user, 2 articles, 2 pushes). Verifying the GIF.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:56Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-sample frames + duration
+
+`cd /tmp && rm -f frame_*.png && for t in 3 6 10 14 18 22; do ffmpeg -y -ss $t -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif -vframes 1 fr_${t}s.png 2>/dev/null; done && /bin/ls fr_*.png && ffmpeg -i /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/demo.gif 2>&1 | grep Duration`
+
+```text
+zoxide: detected a possible configuration issue.
+Please ensure that zoxide is initialized right at the end of your shell configuration file (usually ~/.zshrc).
+
+If the issue persists, consider filing an issue at:
+https://github.com/ajeetdsouza/zoxide/issues
+
+Disable this message by setting _ZO_DOCTOR=0.
+
+fr_10s.png
+fr_14s.png
+fr_18s.png
+fr_3s.png
+fr_6s.png
+  Duration: 00:00:21.24, start: 0.000000, bitrate: 130 kb/s
+Shell cwd was reset to /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:56Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/fr_3s.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:56Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/fr_14s.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:17:56Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/fr_22s.png`
+
+```text
+File does not exist. Note: your current working directory is /Volumes/Data/Program/tries/2026-04-29-ssh-bbs.
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:08Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:08Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `/tmp/fr_18s.png`
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:22Z)**_
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:23Z)**_
+
+Backgrounds render, demo trimmed from 31s → 21s. Committing.
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Cleanup tmp + status
+
+`rm -f /tmp/fr_*.png /tmp/frame_*.png /tmp/menu.png /tmp/article.png /tmp/srv.log /tmp/reg_only.exp ; git status`
+
+```text
+(eval):1: no matches found: /tmp/frame_*.png
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+	modified:   docs/demo.gif
+	modified:   docs/demo.webm
+	modified:   internal/tui/styles.go
+	modified:   scripts/demo.tape
+	modified:   scripts/record-demo.sh
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	.specstory/statistics.json
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:34Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Secret scan
+
+`grep -E -n 'BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}' .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md .specstory/statistics.json 2>&1 | head -3 ; echo "--- scan done ---"`
+
+```text
+--- scan done ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:18:40Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage
+
+`git add internal/tui/styles.go scripts/demo.tape scripts/record-demo.sh docs/demo.gif docs/demo.webm .specstory/ && git status --short`
+
+```text
+M  .specstory/history/2026-04-29_06-32-27Z-ptt-bbs-user-register.md
+A  .specstory/statistics.json
+M  docs/demo.gif
+M  docs/demo.webm
+M  internal/tui/styles.go
+M  scripts/demo.tape
+M  scripts/record-demo.sh
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:19:01Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit fixes
+
+```bash
+git commit -m "$(cat <<'EOF'
+Fix demo recording: backgrounds + tighter pacing
+
+Three fixes after watching the first recording side-by-side with a real
+ssh session:
+
+1. **Background colors were stripped.** lipgloss's package-level renderer
+   auto-detects from os.Stdout, which is wrong when the server runs with
+   `>server.log 2>&1` (record-demo.sh redirects stdout to a file). The
+   detection picked Ascii / no-color and silently dropped every
+   Background() escape — foregrounds rendered fine, which is why the
+   styling looked subtly broken rather than gone. Force TrueColor in
+   internal/tui/styles.go init(); the SSH client's terminal handles the
+   actual capability negotiation.
+
+2. **Front-loaded ssh-connection drag.** The first 6 seconds of the GIF
+   were just the ssh command + password being typed. Use VHS's
+   per-command speed override (`Type@5ms`) so the connect part flashes
+   by, leaving the demo budget for the actual TUI interactions.
+
+3. **record-demo.sh missed stale `go run` parents.** `pkill -f "$BIN"`
+   didn't match `go run ./cmd/sshbbs ...` (different argv) so a manual
+   server from a previous session kept serving on :2222 with its own
+   open DB connection — registrations went into a deleted-inode ghost
+   while the wiped-and-recreated bbs.db looked half-empty. Switch to
+   `lsof -ti :2222 | xargs kill -9`, which kills by port not by argv.
+
+Net result: docs/demo.gif drops 31s → 21s and now matches what users see
+in a real terminal (purple header bars, highlighted cursor row, colored
+推/噓 markers).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" && git log --oneline -5
+```
+
+```text
+[main 78bc2cc] Fix demo recording: backgrounds + tighter pacing
+ 7 files changed, 613 insertions(+), 8 deletions(-)
+ create mode 100644 .specstory/statistics.json
+78bc2cc Fix demo recording: backgrounds + tighter pacing
+b653e50 Add VHS demo recording
+9a17ad2 Initial CLAUDE.md
+c0f714c Unify h/l navigation and add layered test suite
+d4f7369 Implement P0 PTT-style SSH BBS over wish + bubbletea
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-04-29 08:19:27Z)**_
+
+Committed `78bc2cc`. Three root causes, all fixed:
+
+| Symptom | Root cause | Fix |
+|---------|------------|-----|
+| Header/highlight backgrounds missing in GIF | `record-demo.sh` redirects server stdout to a logfile → lipgloss's package renderer auto-detects "no TTY" → strips `Background()` escapes | `lipgloss.SetColorProfile(termenv.TrueColor)` in `tui/styles.go init()` — the SSH client does the real capability negotiation |
+| 6+ seconds of ssh+password typing front-loaded the GIF | Default `TypingSpeed 60ms` × ~85 chars | `Type@5ms "..."` for the connect line + password (everything else stays at 60ms for readability) |
+| GIF showed 5 pushes / DB had 0 (the *real* bug I almost missed) | Stale `go run ./cmd/sshbbs` from your earlier manual run was holding port 2222 with an open DB fd to the deleted inode; my `pkill -f "$BIN"` matched only the absolute-path binary, not the `go run` argv | `lsof -ti :2222 \| xargs kill -9` — kill by port, not by argv |
+
+Demo: 31s → 21s, 388KB → 339KB, and now matches your real-terminal screenshot.

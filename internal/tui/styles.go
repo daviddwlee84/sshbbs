@@ -1,6 +1,21 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
+
+// Force lipgloss's package-level renderer to a profile that supports
+// background colors. The default renderer auto-detects from os.Stdout,
+// which is wrong for a server: stdout might be redirected to a log file
+// (e.g. `./sshbbs >server.log 2>&1 &`), making termenv pick `Ascii` and
+// silently strip every Background() escape we render. The actual SSH
+// session renders into the client's terminal (capable of TrueColor in
+// every modern client), so committing to TrueColor here is safe and
+// matches what wish's per-session renderer would pick anyway.
+func init() {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+}
 
 var (
 	StyleHeader = lipgloss.NewStyle().

@@ -28,9 +28,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Belt-and-braces: kill anything else that's bound to :2222.
-pkill -f "$BIN" 2>/dev/null || true
-sleep 0.3
+# Belt-and-braces: kill anything bound to :2222 (catches stale `go run`
+# parents and orphaned binaries from prior runs that pkill -f "$BIN" misses
+# because their argv doesn't include the absolute binary path).
+PORT_PIDS="$(lsof -ti :2222 2>/dev/null || true)"
+if [[ -n "$PORT_PIDS" ]]; then
+    echo "==> killing stale process(es) on :2222: $PORT_PIDS"
+    echo "$PORT_PIDS" | xargs kill -9 2>/dev/null || true
+    sleep 0.5
+fi
 
 # Reset DB.
 rm -f "$DB" "$DB-shm" "$DB-wal" "$DB-journal"
