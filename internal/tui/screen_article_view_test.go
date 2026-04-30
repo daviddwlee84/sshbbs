@@ -2,7 +2,10 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
 	"github.com/daviddwlee84/sshbbs/internal/store"
@@ -19,6 +22,129 @@ func seedArticle(t *testing.T) (Deps, *store.Article) {
 		t.Fatalf("Create article: %v", err)
 	}
 	return Deps{Store: st, User: user, Broker: chat.NewBroker()}, a
+}
+
+// stripANSI removes SGR / OSC / generic escape sequences so tests can
+// assert on visible text without binding to glamour's exact byte
+// stream. Sufficient for ESC[ … final-byte and ESC] … ST patterns.
+func stripANSI(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b && i+1 < len(s) {
+			// CSI: ESC [ ... <final 0x40-0x7E>
+			if s[i+1] == '[' {
+				j := i + 2
+				for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
+					j++
+				}
+				if j < len(s) {
+					i = j + 1
+					continue
+				}
+			}
+			// OSC: ESC ] ... BEL or ESC \
+			if s[i+1] == ']' {
+				j := i + 2
+				for j < len(s) && s[j] != 0x07 {
+					if j+1 < len(s) && s[j] == 0x1b && s[j+1] == '\\' {
+						j += 1
+						break
+					}
+					j++
+				}
+				if j < len(s) {
+					i = j + 1
+					continue
+				}
+			}
+			// Unknown; skip the ESC byte and continue.
+			i++
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// Glamour rendering: a body that uses markdown features (here a level-1
+// heading) should produce ANSI escape sequences in the rendered output.
+// We don't pin the exact escape because glamour's "dark" style varies
+// between versions — just assert at least one ESC byte landed and the
+// raw text survives stripping.
+func TestArticleView_GlamourRendersMarkdown(t *testing.T) {
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "T", "# Big Heading\n\nbody paragraph here\n")
+	deps := Deps{Store: st, User: user, Broker: chat.NewBroker()}
+
+	m := newArticleViewModel(deps, a.ID)
+	if m.rendered == "" {
+		t.Fatal("rendered body is empty after construction")
+	}
+	if !strings.ContainsRune(m.rendered, '\x1b') {
+		t.Errorf("rendered body has no ANSI escape — glamour didn't run\nrendered: %q", m.rendered)
+	}
+	stripped := stripANSI(m.rendered)
+	if !strings.Contains(stripped, "Big Heading") {
+		t.Errorf("heading text lost in render:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "body paragraph here") {
+		t.Errorf("body text lost in render:\n%s", stripped)
+	}
+}
+
+// WindowSizeMsg with a wider terminal must trigger a re-render so wrap
+// reflows to the new width. We assert the renderedWidth field tracks.
+func TestArticleView_GlamourReRendersOnResize(t *testing.T) {
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "T", "para one\n\npara two\n")
+	deps := Deps{Store: st, User: user, Broker: chat.NewBroker()}
+
+	m := newArticleViewModel(deps, a.ID)
+	beforeWidth := m.renderedWidth
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 50})
+	got := model.(articleViewModel)
+	if got.renderedWidth == beforeWidth {
+		t.Errorf("renderedWidth didn't update: still %d after resize", got.renderedWidth)
+	}
+	if got.renderedWidth != 196 { // 200 - 4 padding
+		t.Errorf("renderedWidth = %d, want 196 (200-4)", got.renderedWidth)
+	}
+}
+
+// ArticleUpdatedMsg should re-fetch AND re-render — a stale cached
+// rendering of the old title/body would defeat the broadcast.
+func TestArticleView_GlamourReRendersOnArticleUpdated(t *testing.T) {
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "T", "old body\n")
+	deps := Deps{Store: st, User: user, Broker: chat.NewBroker()}
+
+	m := newArticleViewModel(deps, a.ID)
+	if !strings.Contains(stripANSI(m.rendered), "old body") {
+		t.Fatalf("initial rendered missing old body:\n%s", stripANSI(m.rendered))
+	}
+
+	// External update.
+	if err := st.Articles().Update(context.Background(), a.ID, user.ID, user.Role, "T", "# brand new\n\nfresh body\n"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	model, _ := m.Update(ArticleUpdatedMsg{ArticleID: a.ID})
+	got := model.(articleViewModel)
+	stripped := stripANSI(got.rendered)
+	if !strings.Contains(stripped, "fresh body") {
+		t.Errorf("rendered didn't refresh:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "brand new") {
+		t.Errorf("rendered missing new heading:\n%s", stripped)
+	}
 }
 
 func TestArticleView_LoadsArticle(t *testing.T) {
@@ -113,12 +239,15 @@ func TestArticleView_ScrollGGoToTopBottom(t *testing.T) {
 		t.Errorf("after G (3 lines, viewport=8): scroll = %d, want 0", got.scroll)
 	}
 
-	// Long body → G should land on totalLines - viewportLines.
+	// Long body → G should land on totalLines - viewportLines (clamped
+	// to >=0 by the code). Use paragraph breaks (`\n\n`) so glamour
+	// preserves them as separate rendered lines instead of word-wrapping
+	// 30 tokens onto two display lines.
 	st := deps.Store
 	user := deps.User
 	long := ""
 	for i := 0; i < 30; i++ {
-		long += "line\n"
+		long += "line\n\n"
 	}
 	a, err := st.Articles().Create(context.Background(), art.BoardID, user.ID, user.UserID, "long", long)
 	if err != nil {
@@ -126,12 +255,27 @@ func TestArticleView_ScrollGGoToTopBottom(t *testing.T) {
 	}
 	mLong := newArticleViewModel(deps, a.ID)
 	mLong.height = 24
+	// Ensure render width is set so we don't fall back to glamourFallbackWidth.
+	mLong, _ = applyWindowSize(mLong, 120, 24)
 	model, _ = mLong.Update(keyOf("G"))
 	gotLong := model.(articleViewModel)
-	wantScroll := gotLong.bodyLineCount() - gotLong.viewportLines()
+	wantScroll := max(0, gotLong.bodyLineCount()-gotLong.viewportLines())
 	if gotLong.scroll != wantScroll {
-		t.Errorf("after G (long body): scroll = %d, want %d", gotLong.scroll, wantScroll)
+		t.Errorf("after G (long body): scroll = %d, want %d (rendered %d lines)",
+			gotLong.scroll, wantScroll, gotLong.bodyLineCount())
 	}
+	if wantScroll == 0 {
+		t.Errorf("test pre-condition: long body produced %d rendered lines (≤ viewport=%d) — won't exercise the G branch",
+			gotLong.bodyLineCount(), gotLong.viewportLines())
+	}
+}
+
+// applyWindowSize is a small helper for tests that need the model to
+// have already received a tea.WindowSizeMsg (so glamour rendering uses
+// the test's terminal width, not the fallback).
+func applyWindowSize(m articleViewModel, w, h int) (articleViewModel, tea.Cmd) {
+	model, cmd := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return model.(articleViewModel), cmd
 }
 
 // `[` and `]` navigate to the prev/next sibling article in the same board.

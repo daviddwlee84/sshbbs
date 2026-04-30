@@ -7,9 +7,15 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
+
+// glamourFallbackWidth is the wrap width used before we get a
+// WindowSizeMsg. 80 is the historical terminal default; the renderer
+// re-runs with the real width as soon as the first resize lands.
+const glamourFallbackWidth = 80
 
 type articleViewModel struct {
 	deps    Deps
@@ -19,6 +25,13 @@ type articleViewModel struct {
 	height  int
 	scroll  int
 	loadErr error
+
+	// rendered is the article body after running through glamour. We cache
+	// because (a) glamour's first call loads chroma's syntax highlighter
+	// (~tens of ms) and (b) View() is called on every keystroke. Re-render
+	// only when the article changes or the window width changes.
+	rendered      string
+	renderedWidth int
 
 	// push input state
 	pushing  bool
@@ -30,6 +43,41 @@ type articleViewModel struct {
 	// pushCursor: -1 = no push selected (D targets article); 0..len-1 = D targets that push.
 	pendingDelete bool
 	pushCursor    int
+}
+
+// renderBody runs the article body through glamour with word-wrap set
+// to the current viewport. Falls back to the raw body on any glamour
+// error so a corrupt-markdown article is still readable.
+func (m *articleViewModel) renderBody() {
+	if m.article == nil {
+		m.rendered = ""
+		m.renderedWidth = 0
+		return
+	}
+	width := m.width - 4
+	if width < 40 {
+		width = glamourFallbackWidth
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		m.rendered = m.article.Body
+		m.renderedWidth = width
+		return
+	}
+	out, err := r.Render(m.article.Body)
+	if err != nil {
+		m.rendered = m.article.Body
+		m.renderedWidth = width
+		return
+	}
+	// Trim leading/trailing blank lines glamour likes to add for
+	// breathing room — they push the content off-screen on small
+	// viewports. Internal blank lines stay.
+	m.rendered = strings.Trim(out, "\n")
+	m.renderedWidth = width
 }
 
 func newArticleViewModel(deps Deps, articleID int64) articleViewModel {
@@ -45,7 +93,11 @@ func newArticleViewModel(deps Deps, articleID int64) articleViewModel {
 	ti.CharLimit = 80
 	ti.Width = 60
 
-	return articleViewModel{deps: deps, article: a, pushes: pushes, loadErr: err, pushIn: ti, pushCursor: -1}
+	m := articleViewModel{deps: deps, article: a, pushes: pushes, loadErr: err, pushIn: ti, pushCursor: -1}
+	// Render with the fallback width so the body is readable even before
+	// the first WindowSizeMsg arrives — Update re-renders on resize.
+	m.renderBody()
+	return m
 }
 
 // canDeleteArticle returns true if the current user may delete the loaded
@@ -96,6 +148,12 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		// Only re-render when the width target actually changes — height
+		// changes don't affect glamour wrap.
+		newWidth := max(msg.Width-4, 40)
+		if newWidth != m.renderedWidth {
+			m.renderBody()
+		}
 		return m, nil
 
 	case PushAddedMsg:
@@ -117,6 +175,7 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// title/body so we render the new text.
 			if a, err := m.deps.Store.Articles().GetByID(context.Background(), m.article.ID); err == nil {
 				m.article = a
+				m.renderBody()
 				// Reset scroll if the new body is shorter than where we
 				// were parked.
 				if m.scroll > m.bodyLineCount() {
@@ -308,8 +367,13 @@ func (m articleViewModel) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cm
 }
 
 // bodyLineCount returns the number of lines View will render for the
-// loaded article (matches strings.Split(body, "\n") used in View).
+// loaded article. Uses the glamour-rendered body so g/G/PgDn agree
+// with what's actually on screen; falls back to raw if rendering hasn't
+// run yet (shouldn't happen post-construction but defensive).
 func (m articleViewModel) bodyLineCount() int {
+	if m.rendered != "" {
+		return len(strings.Split(m.rendered, "\n"))
+	}
 	if m.article == nil {
 		return 0
 	}
@@ -392,12 +456,16 @@ func (m articleViewModel) View() string {
 	b.WriteString("  " + StyleDim.Render("Score: ") + fmt.Sprintf("%d", a.RecommendScore) + "\n")
 	b.WriteString("\n")
 
-	bodyLines := strings.Split(a.Body, "\n")
+	body := m.rendered
+	if body == "" {
+		body = a.Body
+	}
+	bodyLines := strings.Split(body, "\n")
 	start := min(m.scroll, len(bodyLines))
 	maxLines := max(m.height-16, 5)
 	end := min(start+maxLines, len(bodyLines))
 	for _, line := range bodyLines[start:end] {
-		b.WriteString("  " + line + "\n")
+		b.WriteString(line + "\n")
 	}
 	if start > 0 || end < len(bodyLines) {
 		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("[lines %d-%d / %d]", start+1, end, len(bodyLines))))
