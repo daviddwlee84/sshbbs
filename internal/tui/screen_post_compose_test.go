@@ -69,6 +69,47 @@ func TestPostCompose_SubmitBroadcastsArticleAdded(t *testing.T) {
 	}
 }
 
+// Ctrl+I extracts frontmatter from a pasted markdown blob and prefills
+// title + body. Pushes section in the input is silently dropped.
+func TestPostCompose_CtrlIImportsFrontmatter(t *testing.T) {
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	deps := Deps{Store: st, User: alice, Broker: chat.NewBroker()}
+	m := newPostComposeModel(deps, board.ID)
+	m.body.SetValue("---\ntitle: Imported\nboard: Welcome\n---\n\nhello world\n")
+
+	m.importFromBody()
+
+	if m.title.Value() != "Imported" {
+		t.Errorf("title = %q, want 'Imported'", m.title.Value())
+	}
+	if m.body.Value() != "hello world" {
+		t.Errorf("body = %q, want 'hello world'", m.body.Value())
+	}
+	if m.err != "" {
+		t.Errorf("unexpected err = %q", m.err)
+	}
+}
+
+func TestPostCompose_CtrlIWithoutFrontmatterErrors(t *testing.T) {
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	deps := Deps{Store: st, User: alice, Broker: chat.NewBroker()}
+	m := newPostComposeModel(deps, board.ID)
+	m.body.SetValue("just plain text without any frontmatter")
+
+	m.importFromBody()
+
+	if m.err == "" {
+		t.Error("expected err for body without frontmatter")
+	}
+	if m.title.Value() != "" {
+		t.Errorf("title was changed despite parse failure: %q", m.title.Value())
+	}
+}
+
 // Empty title or empty body must not insert and must not broadcast.
 func TestPostCompose_EmptyFieldsDoNotSubmit(t *testing.T) {
 	st := storetest.New(t)

@@ -122,7 +122,7 @@ func (m Root) guestWriteBlocked(to Screen) tea.Cmd {
 		return nil
 	}
 	switch to {
-	case ScreenPostCompose, ScreenWBCompose, ScreenMailCompose, ScreenAdminUsers:
+	case ScreenPostCompose, ScreenWBCompose, ScreenMailCompose, ScreenAdminUsers, ScreenArticleEdit:
 		return func() tea.Msg { return ErrorMsg{Err: errors.New("guest 為唯讀帳號 (read-only)")} }
 	}
 	return nil
@@ -175,6 +175,10 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newPasswordChangeModel(m.deps)
 	case ScreenAdminUsers:
 		sub = newAdminUsersModel(m.deps)
+	case ScreenArticleEdit:
+		sub = newArticleEditModel(m.deps, n.ArticleID)
+	case ScreenArticleExport:
+		sub = newArticleExportModel(m.deps, n.ArticleID)
 	default:
 		// Unknown screen — leave sub untouched. Later steps add cases.
 		return m, nil

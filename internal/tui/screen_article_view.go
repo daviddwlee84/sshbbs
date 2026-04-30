@@ -78,6 +78,18 @@ func (m articleViewModel) canPush() bool {
 	return m.deps.User != nil && m.deps.User.Role != store.RoleGuest
 }
 
+// canEditArticle mirrors canDeleteArticle: the author may edit their own
+// post, mods and admins may edit anyone's.
+func (m articleViewModel) canEditArticle() bool {
+	if m.deps.User == nil || m.article == nil {
+		return false
+	}
+	if m.deps.User.ID == m.article.AuthorID {
+		return true
+	}
+	return m.deps.User.Role.AtLeast(store.RoleMod)
+}
+
 func (m articleViewModel) Init() tea.Cmd { return nil }
 
 func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -96,6 +108,20 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a, err := m.deps.Store.Articles().GetByID(ctx, m.article.ID); err == nil {
 				m.article = a
+			}
+		}
+
+	case ArticleUpdatedMsg:
+		if m.article != nil && msg.ArticleID == m.article.ID {
+			// Edit happened in another session — refetch the canonical
+			// title/body so we render the new text.
+			if a, err := m.deps.Store.Articles().GetByID(context.Background(), m.article.ID); err == nil {
+				m.article = a
+				// Reset scroll if the new body is shorter than where we
+				// were parked.
+				if m.scroll > m.bodyLineCount() {
+					m.scroll = 0
+				}
 			}
 		}
 		return m, nil
@@ -205,6 +231,28 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingDelete = true
 			m.err = ""
 			return m, nil
+		case "E":
+			if m.article == nil {
+				return m, nil
+			}
+			if !m.canEditArticle() {
+				m.err = "權限不足 (only the author or a mod can edit)"
+				return m, nil
+			}
+			id := m.article.ID
+			boardID := m.article.BoardID
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenArticleEdit, ArticleID: id, BoardID: boardID}
+			}
+		case "y":
+			if m.article == nil {
+				return m, nil
+			}
+			id := m.article.ID
+			boardID := m.article.BoardID
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenArticleExport, ArticleID: id, BoardID: boardID}
+			}
 		}
 	}
 	return m, nil
@@ -394,12 +442,15 @@ func (m articleViewModel) View() string {
 		}
 		b.WriteString("\n  " + StyleError.Render("⚠ "+prompt))
 	} else {
-		help := "j/k scroll"
+		help := "j/k scroll · y 匯出"
 		if m.canPush() {
 			help += " · + 推 · - 噓 · = →"
 		}
 		if len(m.pushes) > 0 {
 			help += " · p/P 選推文"
+		}
+		if m.canEditArticle() {
+			help += " · E 編輯"
 		}
 		if m.pushCursor >= 0 && m.canDeletePush(m.pushCursor) {
 			help += " · D 刪除推文"

@@ -8,15 +8,16 @@ import (
 )
 
 type Article struct {
-	ID              int64
-	BoardID         int64
-	AuthorID        int64
-	AuthorUserID    string
-	Title           string
-	Body            string
-	RecommendScore  int64
-	Filemode        int64
-	CreatedAt       time.Time
+	ID             int64
+	BoardID        int64
+	AuthorID       int64
+	AuthorUserID   string
+	Title          string
+	Body           string
+	RecommendScore int64
+	Filemode       int64
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
 }
 
 type ArticleRepo struct{ s *Store }
@@ -27,13 +28,13 @@ var (
 )
 
 const articleColumns = `id, board_id, author_id, author_userid, title, body,
-	recommend_score, filemode, created_at`
+	recommend_score, filemode, created_at, updated_at`
 
 func scanArticle(row interface{ Scan(...any) error }) (*Article, error) {
 	a := &Article{}
 	err := row.Scan(
 		&a.ID, &a.BoardID, &a.AuthorID, &a.AuthorUserID, &a.Title, &a.Body,
-		&a.RecommendScore, &a.Filemode, &a.CreatedAt,
+		&a.RecommendScore, &a.Filemode, &a.CreatedAt, &a.UpdatedAt,
 	)
 	return a, err
 }
@@ -131,5 +132,34 @@ func (r *ArticleRepo) Delete(ctx context.Context, articleID, requesterID int64, 
 		return ErrPermissionDenied
 	}
 	_, err = r.s.db.ExecContext(ctx, `DELETE FROM articles WHERE id = ?`, articleID)
+	return err
+}
+
+// Update mutates the article's title and body and sets updated_at to now.
+// Permission mirrors Delete: requester must be the author OR have a role
+// at-or-above mod. Returns ErrArticleNotFound / ErrPermissionDenied. Score,
+// board, and author_id are intentionally not editable here — those would be
+// separate concerns (move-board / re-attribute) outside the user-facing
+// edit flow.
+func (r *ArticleRepo) Update(ctx context.Context, articleID, requesterID int64, requesterRole Role, newTitle, newBody string) error {
+	r.s.writeMu.Lock()
+	defer r.s.writeMu.Unlock()
+	var authorID int64
+	err := r.s.db.QueryRowContext(ctx,
+		`SELECT author_id FROM articles WHERE id = ?`, articleID,
+	).Scan(&authorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrArticleNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if authorID != requesterID && !requesterRole.AtLeast(RoleMod) {
+		return ErrPermissionDenied
+	}
+	_, err = r.s.db.ExecContext(ctx,
+		`UPDATE articles SET title = ?, body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		newTitle, newBody, articleID,
+	)
 	return err
 }

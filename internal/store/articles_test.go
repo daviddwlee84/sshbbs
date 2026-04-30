@@ -233,6 +233,78 @@ func TestArticles_Delete_CascadesPushes(t *testing.T) {
 	}
 }
 
+func TestArticles_Update_OwnerSucceeds(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "old title", "old body")
+
+	if err := st.Articles().Update(ctx, a.ID, alice.ID, store.RoleUser, "new title", "new body"); err != nil {
+		t.Fatalf("Update(owner): %v", err)
+	}
+	got, err := st.Articles().GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Title != "new title" || got.Body != "new body" {
+		t.Errorf("title/body = %q/%q, want new", got.Title, got.Body)
+	}
+	if !got.UpdatedAt.Valid {
+		t.Error("UpdatedAt not set after Update")
+	}
+}
+
+func TestArticles_Update_ModCanEditAnyones(t *testing.T) {
+	ctx := context.Background()
+	for _, role := range []store.Role{store.RoleMod, store.RoleAdmin} {
+		t.Run(string(role), func(t *testing.T) {
+			st := storetest.New(t)
+			alice := storetest.MustUser(t, st, "alice", "")
+			bob := storetest.MustUser(t, st, "bob", "")
+			board := storetest.MustBoard(t, st, "Test")
+			a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "x", "y")
+
+			if err := st.Articles().Update(ctx, a.ID, bob.ID, role, "edited by mod", "edited body"); err != nil {
+				t.Fatalf("Update(%s): %v", role, err)
+			}
+			got, _ := st.Articles().GetByID(ctx, a.ID)
+			if got.Title != "edited by mod" {
+				t.Errorf("%s edit: title = %q, want 'edited by mod'", role, got.Title)
+			}
+		})
+	}
+}
+
+func TestArticles_Update_NonOwnerNonModDenied(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "untouched", "body")
+
+	if err := st.Articles().Update(ctx, a.ID, bob.ID, store.RoleUser, "evil", "evil"); !errors.Is(err, store.ErrPermissionDenied) {
+		t.Errorf("got %v, want ErrPermissionDenied", err)
+	}
+	got, _ := st.Articles().GetByID(ctx, a.ID)
+	if got.Title != "untouched" {
+		t.Errorf("title was changed despite permission error: %q", got.Title)
+	}
+	if got.UpdatedAt.Valid {
+		t.Error("UpdatedAt set despite denied update")
+	}
+}
+
+func TestArticles_Update_NotFound(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	if err := st.Articles().Update(ctx, 9999, alice.ID, store.RoleUser, "t", "b"); !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("got %v, want ErrArticleNotFound", err)
+	}
+}
+
 func TestArticles_BoardIsolation(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)

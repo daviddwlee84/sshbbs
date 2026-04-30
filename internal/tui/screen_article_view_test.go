@@ -421,6 +421,77 @@ func TestArticleView_IgnoresUnrelatedPush(t *testing.T) {
 	}
 }
 
+func TestArticleView_EOpensEdit_AsAuthor(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	_, cmd := m.Update(keyOf("E"))
+	msg := runCmd(cmd)
+	nav, ok := msg.(NavigateMsg)
+	if !ok {
+		t.Fatalf("got %T, want NavigateMsg", msg)
+	}
+	if nav.To != ScreenArticleEdit || nav.ArticleID != art.ID {
+		t.Errorf("nav = %+v, want article-edit %d", nav, art.ID)
+	}
+}
+
+func TestArticleView_ERefusedForNonOwnerNonMod(t *testing.T) {
+	deps, art := seedArticle(t)
+	// Switch the user to bob (not the author).
+	bob := storetest.MustUser(t, deps.Store, "bob", "")
+	deps.User = bob
+	m := newArticleViewModel(deps, art.ID)
+	model, cmd := m.Update(keyOf("E"))
+	if cmd != nil {
+		// If something IS returned, it must NOT be a NavigateMsg to ArticleEdit.
+		if nav, ok := runCmd(cmd).(NavigateMsg); ok && nav.To == ScreenArticleEdit {
+			t.Errorf("non-owner non-mod was allowed to navigate to edit screen")
+		}
+	}
+	if got := model.(articleViewModel); got.err == "" {
+		t.Errorf("expected err set after refused E key, got %q", got.err)
+	}
+}
+
+func TestArticleView_YOpensExport(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	_, cmd := m.Update(keyOf("y"))
+	nav := runCmd(cmd).(NavigateMsg)
+	if nav.To != ScreenArticleExport || nav.ArticleID != art.ID {
+		t.Errorf("nav = %+v, want article-export %d", nav, art.ID)
+	}
+}
+
+func TestArticleView_AcceptsArticleUpdated(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+
+	// Externally update the article (simulating another session's edit).
+	if err := deps.Store.Articles().Update(context.Background(), art.ID, deps.User.ID, deps.User.Role, "edited title", "edited body"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	// Fire ArticleUpdatedMsg for THIS article — model should refetch.
+	model, _ := m.Update(ArticleUpdatedMsg{ArticleID: art.ID})
+	got := model.(articleViewModel)
+	if got.article.Title != "edited title" || got.article.Body != "edited body" {
+		t.Errorf("after ArticleUpdatedMsg: title/body = %q/%q want edited",
+			got.article.Title, got.article.Body)
+	}
+}
+
+func TestArticleView_IgnoresUnrelatedArticleUpdated(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	originalTitle := m.article.Title
+
+	model, _ := m.Update(ArticleUpdatedMsg{ArticleID: art.ID + 999})
+	got := model.(articleViewModel)
+	if got.article.Title != originalTitle {
+		t.Errorf("title changed for unrelated update: %q", got.article.Title)
+	}
+}
+
 // PushAddedMsg for THIS article triggers a re-fetch so timestamps and
 // recommend_score reflect canonical DB state.
 func TestArticleView_AcceptsRelatedPush(t *testing.T) {

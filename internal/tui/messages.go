@@ -17,6 +17,8 @@ const (
 	ScreenMailCompose
 	ScreenPasswordChange
 	ScreenAdminUsers
+	ScreenArticleEdit
+	ScreenArticleExport
 )
 
 // NavigateMsg is emitted by sub-screens to ask the Root to swap screens.
@@ -70,4 +72,11 @@ type ArticleAddedMsg struct {
 	ArticleID    int64
 	AuthorUserID string
 	Title        string
+}
+
+// ArticleUpdatedMsg is broadcast by the chat broker when an article's
+// title or body is edited. Article-view models filter by ArticleID and
+// re-fetch from DB so they don't render stale text.
+type ArticleUpdatedMsg struct {
+	ArticleID int64
 }

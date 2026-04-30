@@ -7,6 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/daviddwlee84/sshbbs/internal/markdown"
 )
 
 const (
@@ -69,6 +71,9 @@ func (m postComposeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+s":
 			return m.submit()
+		case "ctrl+i":
+			m.importFromBody()
+			return m, nil
 		}
 	}
 
@@ -96,6 +101,35 @@ func (m *postComposeModel) toggleFocus() {
 		m.body.Blur()
 		m.title.Focus()
 	}
+}
+
+// importFromBody parses the current body as markdown and prefills title +
+// body from any frontmatter found. If the body has no frontmatter it's
+// left alone (with a helpful error). Pushes in the parsed input are
+// silently ignored — see plan: import via Ctrl+I always credits the
+// current user as author and never restores foreign-authored pushes.
+func (m *postComposeModel) importFromBody() {
+	raw := m.body.Value()
+	if strings.TrimSpace(raw) == "" {
+		m.err = "貼上 markdown（含 --- frontmatter ---）後再按 Ctrl+I"
+		return
+	}
+	parsed, err := markdown.Parse(raw)
+	if err != nil {
+		m.err = "parse: " + err.Error()
+		return
+	}
+	if parsed.Title == "" && parsed.Body == strings.TrimRight(raw, "\n") {
+		// Parser didn't find frontmatter — body is verbatim. Tell the
+		// user so they don't think Ctrl+I silently no-op'd.
+		m.err = "找不到 frontmatter（請貼上開頭含 --- ... --- 的 markdown）"
+		return
+	}
+	if parsed.Title != "" {
+		m.title.SetValue(parsed.Title)
+	}
+	m.body.SetValue(parsed.Body)
+	m.err = ""
 }
 
 func (m postComposeModel) submit() (tea.Model, tea.Cmd) {
@@ -148,7 +182,7 @@ func (m postComposeModel) View() string {
 	if m.err != "" {
 		b.WriteString("\n  " + StyleError.Render("⚠ "+m.err) + "\n")
 	}
-	b.WriteString("\n  " + StyleHelp.Render("Tab switch field · Enter (in title) → body · Ctrl+S send · Esc cancel"))
+	b.WriteString("\n  " + StyleHelp.Render("Tab switch field · Enter (in title) → body · Ctrl+S send · Ctrl+I import markdown · Esc cancel"))
 	b.WriteString("\n")
 	return b.String()
 }

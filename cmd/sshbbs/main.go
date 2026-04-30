@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,12 +16,25 @@ import (
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/seed"
 	"github.com/daviddwlee84/sshbbs/internal/server"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 	"github.com/daviddwlee84/sshbbs/internal/version"
 )
 
 func main() {
+	// Subcommand dispatch: anything that isn't a flag is treated as a
+	// subcommand. Today only `import` exists, but the shape leaves room
+	// for future ops tools (e.g. `export`, `dump`).
+	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") {
+		switch os.Args[1] {
+		case "import":
+			os.Exit(runImport(os.Args[2:]))
+		default:
+			log.Fatalf("unknown subcommand: %s", os.Args[1])
+		}
+	}
+
 	addr := flag.String("addr", ":2222", "SSH listen address")
 	dbPath := flag.String("db", "data/bbs.db", "SQLite database path")
 	hostkey := flag.String("hostkey", ".ssh/host_ed25519", "SSH host key path")
@@ -40,6 +54,9 @@ func main() {
 		AdminPassword: *adminPassword,
 	}); err != nil {
 		log.Fatalf("seed system accounts: %v", err)
+	}
+	if err := seed.Articles(context.Background(), st, auth.ReservedUsernameAdmin); err != nil {
+		log.Fatalf("seed articles: %v", err)
 	}
 	log.Printf("storage ready at %s", *dbPath)
 
