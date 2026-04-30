@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -11,7 +12,9 @@ import (
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
 	"github.com/muesli/termenv"
+	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/daviddwlee84/sshbbs/internal/auth"
 	"github.com/daviddwlee84/sshbbs/internal/chat"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 	"github.com/daviddwlee84/sshbbs/internal/tui"
@@ -27,12 +30,44 @@ func New(cfg Config, st *store.Store, broker *chat.Broker) (*ssh.Server, error) 
 		wish.WithAddress(cfg.Addr),
 		wish.WithHostKeyPath(cfg.HostKey),
 		wish.WithPasswordAuth(PasswordAuth(st)),
+		withReservedNoneAuth(),
 		wish.WithMiddleware(
 			bubbletea.MiddlewareWithProgramHandler(makeProgramHandler(st, broker), termenv.ANSI256),
 			activeterm.Middleware(),
 			logging.Middleware(),
 		),
 	)
+}
+
+// withReservedNoneAuth enables SSH "none" authentication for the two
+// reserved usernames where a password is meaningless: `guest` (read-only
+// spectator) and `new` (in-TUI registration). Other usernames still go
+// through the password callback.
+//
+// charmbracelet/ssh only sets NoClientAuth=true when no other handlers
+// are configured (see its server.go config()), so we override its
+// ServerConfigCallback to force NoClientAuth=true with a per-username
+// callback. The library still adds HostKey + PasswordCallback on top of
+// our config, so password auth keeps working for everyone else.
+//
+// Effect: `ssh guest@host -p 2222` and `ssh new@host -p 2222` connect
+// with no password prompt. `ssh alice@host -p 2222` still prompts.
+func withReservedNoneAuth() ssh.Option {
+	return func(s *ssh.Server) error {
+		s.ServerConfigCallback = func(ctx ssh.Context) *gossh.ServerConfig {
+			return &gossh.ServerConfig{
+				NoClientAuth: true,
+				NoClientAuthCallback: func(conn gossh.ConnMetadata) (*gossh.Permissions, error) {
+					switch conn.User() {
+					case auth.ReservedUsernameGuest, auth.ReservedUsernameNew:
+						return nil, nil
+					}
+					return nil, errors.New("auth required")
+				},
+			}
+		}
+		return nil
+	}
 }
 
 // makeProgramHandler is the wish ProgramHandler. It owns *tea.Program
@@ -43,7 +78,11 @@ func makeProgramHandler(st *store.Store, broker *chat.Broker) bubbletea.ProgramH
 		ctx := sess.Context()
 
 		// Register-mode: SSH user was "new". No DB user, no broker registration.
-		if reg, ok := ctx.Value(ctxKeyRegister).(bool); ok && reg {
+		// `none` auth bypasses our PasswordHandler, so ctxKeyRegister isn't set
+		// when a client connects via the none-auth path — fall back to inspecting
+		// sess.User() directly.
+		reg, _ := ctx.Value(ctxKeyRegister).(bool)
+		if reg || sess.User() == auth.ReservedUsernameNew {
 			deps := tui.Deps{Store: st, Broker: broker, IsRegister: true}
 			m := tui.NewRoot(deps)
 			return tea.NewProgram(m, append(bubbletea.MakeOptions(sess), tea.WithAltScreen())...)
@@ -51,8 +90,20 @@ func makeProgramHandler(st *store.Store, broker *chat.Broker) bubbletea.ProgramH
 
 		uid, _ := ctx.Value(ctxKeyUserID).(int64)
 		if uid == 0 {
-			log.Warn("session has no user_id; rejecting", "remote", sess.RemoteAddr())
-			return nil
+			// SSH `none` auth path: NoClientAuthCallback succeeded for
+			// guest but didn't run our PasswordHandler, so user_id was
+			// never stashed. Resolve the guest row here. Any other
+			// username with uid==0 means a misconfiguration — reject.
+			if sess.User() == auth.ReservedUsernameGuest {
+				guest, err := st.Users().GetByUserID(context.Background(), auth.ReservedUsernameGuest)
+				if err == nil && guest.Role == store.RoleGuest {
+					uid = guest.ID
+				}
+			}
+			if uid == 0 {
+				log.Warn("session has no user_id; rejecting", "remote", sess.RemoteAddr(), "user", sess.User())
+				return nil
+			}
 		}
 		user, err := st.Users().GetByID(context.Background(), uid)
 		if err != nil {
