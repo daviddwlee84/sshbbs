@@ -21,7 +21,10 @@ type Article struct {
 
 type ArticleRepo struct{ s *Store }
 
-var ErrArticleNotFound = errors.New("article not found")
+var (
+	ErrArticleNotFound  = errors.New("article not found")
+	ErrPermissionDenied = errors.New("permission denied")
+)
 
 const articleColumns = `id, board_id, author_id, author_userid, title, body,
 	recommend_score, filemode, created_at`
@@ -105,4 +108,28 @@ func (r *ArticleRepo) Create(ctx context.Context, boardID, authorID int64, autho
 	}
 	row := r.s.db.QueryRowContext(ctx, `SELECT `+articleColumns+` FROM articles WHERE id = ?`, id)
 	return scanArticle(row)
+}
+
+// Delete hard-deletes the article. Permission: requester must be the author
+// OR have a role at-or-above mod. Returns ErrArticleNotFound when the row
+// is gone, ErrPermissionDenied when the requester is unauthorized.
+// Cascades to pushes via the FK on pushes.article_id.
+func (r *ArticleRepo) Delete(ctx context.Context, articleID, requesterID int64, requesterRole Role) error {
+	r.s.writeMu.Lock()
+	defer r.s.writeMu.Unlock()
+	var authorID int64
+	err := r.s.db.QueryRowContext(ctx,
+		`SELECT author_id FROM articles WHERE id = ?`, articleID,
+	).Scan(&authorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrArticleNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if authorID != requesterID && !requesterRole.AtLeast(RoleMod) {
+		return ErrPermissionDenied
+	}
+	_, err = r.s.db.ExecContext(ctx, `DELETE FROM articles WHERE id = ?`, articleID)
+	return err
 }

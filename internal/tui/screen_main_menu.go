@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
 type menuItem struct {
@@ -20,16 +22,24 @@ type mainMenuModel struct {
 }
 
 func newMainMenuModel(deps Deps) mainMenuModel {
-	return mainMenuModel{
-		deps: deps,
-		items: []menuItem{
-			{label: "看板列表 Boards", hint: "browse and read articles", to: ScreenBoardList},
-			{label: "水球 Water Balloons", hint: "private messages with online users", to: ScreenWBInbox},
-			{label: "線上使用者 Online", hint: "see who's logged in", to: ScreenOnline},
-			{label: "信箱 Mail", hint: "persistent threaded mail", to: ScreenMailInbox},
-			{label: "離線 Quit", hint: "disconnect", to: -1},
-		},
+	items := []menuItem{
+		{label: "看板列表 Boards", hint: "browse and read articles", to: ScreenBoardList},
+		{label: "水球 Water Balloons", hint: "private messages with online users", to: ScreenWBInbox},
+		{label: "線上使用者 Online", hint: "see who's logged in", to: ScreenOnline},
+		{label: "信箱 Mail", hint: "persistent threaded mail", to: ScreenMailInbox},
 	}
+	// Admin gets an extra entry; positioned before the Quit row so the
+	// numeric shortcut for Quit always lands on the LAST item regardless
+	// of role (the "5 quits" shortcut becomes "6 quits" for admin).
+	if deps.User != nil && deps.User.Role == store.RoleAdmin {
+		items = append(items, menuItem{
+			label: "管理 Admin",
+			hint:  "manage user roles",
+			to:    ScreenAdminUsers,
+		})
+	}
+	items = append(items, menuItem{label: "離線 Quit", hint: "disconnect", to: -1})
+	return mainMenuModel{deps: deps, items: items}
 }
 
 func (m mainMenuModel) Init() tea.Cmd { return nil }
@@ -55,7 +65,7 @@ func (m mainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, func() tea.Msg { return NavigateMsg{To: it.to} }
-		case "1", "2", "3", "4", "5":
+		case "1", "2", "3", "4", "5", "6":
 			idx := int(k.String()[0] - '1')
 			if idx < len(m.items) {
 				it := m.items[idx]
@@ -109,7 +119,7 @@ func (m mainMenuModel) View() string {
 	}
 
 	b.WriteString("\n  ")
-	b.WriteString(StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-5 jump · q quit"))
+	b.WriteString(StyleHelp.Render(fmt.Sprintf("↑/↓ j/k move · Enter/→/l choose · 1-%d jump · q quit", len(m.items))))
 	b.WriteString("\n")
 	return b.String()
 }

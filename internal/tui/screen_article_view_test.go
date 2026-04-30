@@ -184,6 +184,225 @@ func TestArticleView_BracketSiblingNavigation(t *testing.T) {
 	}
 }
 
+// `D` from article view as the author opens the confirm overlay; `y`
+// hard-deletes and navigates back to the board view; `n` cancels.
+func TestArticleView_DeleteOwn_RequiresConfirm(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+
+	model, _ := m.Update(keyOf("D"))
+	got := model.(articleViewModel)
+	if !got.pendingDelete {
+		t.Fatal("D did not enter pending-delete state")
+	}
+	// Cancel.
+	model, _ = got.Update(keyOf("n"))
+	got = model.(articleViewModel)
+	if got.pendingDelete {
+		t.Error("n did not cancel pending-delete")
+	}
+	// Article must still exist.
+	if _, err := deps.Store.Articles().GetByID(context.Background(), art.ID); err != nil {
+		t.Errorf("article was deleted on cancel: %v", err)
+	}
+
+	// Re-enter and confirm.
+	model, _ = got.Update(keyOf("D"))
+	got = model.(articleViewModel)
+	_, cmd := got.Update(keyOf("y"))
+	msg := runCmd(cmd)
+	nav, ok := msg.(NavigateMsg)
+	if !ok {
+		t.Fatalf("got %T, want NavigateMsg after y", msg)
+	}
+	if nav.To != ScreenBoardView || nav.BoardID != art.BoardID {
+		t.Errorf("nav after y = %+v, want ScreenBoardView BoardID=%d", nav, art.BoardID)
+	}
+	if _, err := deps.Store.Articles().GetByID(context.Background(), art.ID); err == nil {
+		t.Error("article still exists after y confirm")
+	}
+}
+
+// `D` from a non-author non-mod must NOT enter pending-delete state.
+// (Renders an inline error string and stays on the screen.)
+func TestArticleView_DeleteRefusedForNonOwnerNonMod(t *testing.T) {
+	deps, art := seedArticle(t)
+	// Replace deps.User with a different non-mod user.
+	bob := storetest.MustUser(t, deps.Store, "bob", "Bob")
+	deps2 := deps
+	deps2.User = bob
+	m := newArticleViewModel(deps2, art.ID)
+
+	model, _ := m.Update(keyOf("D"))
+	got := model.(articleViewModel)
+	if got.pendingDelete {
+		t.Error("D should not enter pending-delete for non-owner non-mod")
+	}
+	if got.err == "" {
+		t.Error("expected an err message explaining the refusal")
+	}
+}
+
+// `D` as a mod (not author) must enter pending-delete and successful
+// confirmation deletes the article.
+func TestArticleView_ModCanDeleteAnyones(t *testing.T) {
+	deps, art := seedArticle(t)
+	bob := storetest.MustUser(t, deps.Store, "bob", "Bob")
+	bob.Role = store.RoleMod
+	if err := deps.Store.Users().SetRole(context.Background(), bob.ID, store.RoleMod); err != nil {
+		t.Fatalf("SetRole: %v", err)
+	}
+	deps2 := deps
+	deps2.User = bob
+	m := newArticleViewModel(deps2, art.ID)
+
+	model, _ := m.Update(keyOf("D"))
+	got := model.(articleViewModel)
+	if !got.pendingDelete {
+		t.Fatal("mod should enter pending-delete on D")
+	}
+	_, cmd := got.Update(keyOf("y"))
+	if _, ok := runCmd(cmd).(NavigateMsg); !ok {
+		t.Error("mod confirm did not produce NavigateMsg")
+	}
+	if _, err := deps.Store.Articles().GetByID(context.Background(), art.ID); err == nil {
+		t.Error("article still exists after mod delete")
+	}
+}
+
+// `p` advances the push cursor; `P` reverses; the cycle wraps via the
+// "no selection" sentinel state (cursor=-1) so D defaults to article delete.
+func TestArticleView_PushCursor_pPCycles(t *testing.T) {
+	deps, art := seedArticle(t)
+	ctx := context.Background()
+	// Seed three pushes so the cursor has somewhere to go.
+	for i := 0; i < 3; i++ {
+		if _, err := deps.Store.Pushes().Create(ctx, art.ID, deps.User.ID, deps.User.UserID, store.PushKindPush, "msg"); err != nil {
+			t.Fatalf("seed push: %v", err)
+		}
+	}
+	m := newArticleViewModel(deps, art.ID)
+	if m.pushCursor != -1 {
+		t.Fatalf("initial pushCursor = %d, want -1", m.pushCursor)
+	}
+
+	// p p p p → 0, 1, 2, -1
+	wantSeq := []int{0, 1, 2, -1}
+	for i, want := range wantSeq {
+		model, _ := m.Update(keyOf("p"))
+		m = model.(articleViewModel)
+		if m.pushCursor != want {
+			t.Errorf("after %d×p: cursor = %d, want %d", i+1, m.pushCursor, want)
+		}
+	}
+
+	// From -1: P → 2, P → 1, P → 0, P → -1
+	wantSeq = []int{2, 1, 0, -1}
+	for i, want := range wantSeq {
+		model, _ := m.Update(keyOf("P"))
+		m = model.(articleViewModel)
+		if m.pushCursor != want {
+			t.Errorf("after %d×P: cursor = %d, want %d", i+1, m.pushCursor, want)
+		}
+	}
+}
+
+// `p` is a no-op when there are no pushes — cursor stays at -1.
+func TestArticleView_PushCursor_NoPushesIsNoop(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	for _, key := range []string{"p", "P"} {
+		model, _ := m.Update(keyOf(key))
+		got := model.(articleViewModel)
+		if got.pushCursor != -1 {
+			t.Errorf("%s with no pushes: cursor = %d, want -1", key, got.pushCursor)
+		}
+	}
+}
+
+// `D` while cursor is on a push deletes that push and reverts the score.
+// The article remains, the push is gone, and the cursor clamps to -1
+// when the last push is removed.
+func TestArticleView_DeleteCursoredPush(t *testing.T) {
+	deps, art := seedArticle(t)
+	ctx := context.Background()
+	// Seed one push of kind=push so the score becomes +1.
+	p, err := deps.Store.Pushes().Create(ctx, art.ID, deps.User.ID, deps.User.UserID, store.PushKindPush, "+1 vote")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	pre, _ := deps.Store.Articles().GetByID(ctx, art.ID)
+	if pre.RecommendScore != 1 {
+		t.Fatalf("post-seed score = %d, want 1", pre.RecommendScore)
+	}
+
+	m := newArticleViewModel(deps, art.ID)
+	model, _ := m.Update(keyOf("p"))
+	m = model.(articleViewModel)
+	if m.pushCursor != 0 {
+		t.Fatalf("p should land cursor=0, got %d", m.pushCursor)
+	}
+	model, _ = m.Update(keyOf("D"))
+	m = model.(articleViewModel)
+	if !m.pendingDelete {
+		t.Fatal("D should arm the confirm overlay")
+	}
+	model, cmd := m.Update(keyOf("y"))
+	m = model.(articleViewModel)
+	// y on push delete must not navigate away — the article view stays mounted.
+	if cmd != nil {
+		if msg := runCmd(cmd); msg != nil {
+			if _, isNav := msg.(NavigateMsg); isNav {
+				t.Errorf("push delete should not produce NavigateMsg; got %+v", msg)
+			}
+		}
+	}
+	if m.pushCursor != -1 {
+		t.Errorf("after deleting last push: cursor = %d, want -1 (clamped)", m.pushCursor)
+	}
+	if len(m.pushes) != 0 {
+		t.Errorf("after delete: %d pushes remain, want 0", len(m.pushes))
+	}
+	if m.article.RecommendScore != 0 {
+		t.Errorf("score after revert = %d, want 0", m.article.RecommendScore)
+	}
+	// And the article itself must still exist (not cascade-deleted).
+	if _, err := deps.Store.Articles().GetByID(ctx, art.ID); err != nil {
+		t.Errorf("article gone after push delete: %v", err)
+	}
+	// Push truly gone from DB.
+	pushes, _ := deps.Store.Pushes().ListByArticle(ctx, art.ID)
+	for _, q := range pushes {
+		if q.ID == p.ID {
+			t.Errorf("push %d still exists in DB", p.ID)
+		}
+	}
+}
+
+// `D` on someone else's push is refused for a non-mod, even if the user
+// owns the article. This is the strict-ownership case (mod can override).
+func TestArticleView_DeleteCursoredPush_NonOwnerNonModRefused(t *testing.T) {
+	deps, art := seedArticle(t)
+	ctx := context.Background()
+	// alice owns the article. bob (also non-mod) leaves a push.
+	bob := storetest.MustUser(t, deps.Store, "bob", "")
+	if _, err := deps.Store.Pushes().Create(ctx, art.ID, bob.ID, bob.UserID, store.PushKindBoo, "-1"); err != nil {
+		t.Fatalf("seed bob push: %v", err)
+	}
+	m := newArticleViewModel(deps, art.ID)
+	// cursor=0 → bob's push.
+	model, _ := m.Update(keyOf("p"))
+	m = model.(articleViewModel)
+	model, _ = m.Update(keyOf("D"))
+	got := model.(articleViewModel)
+	if got.pendingDelete {
+		t.Error("alice should not be able to delete bob's push (non-mod)")
+	}
+	if got.err == "" {
+		t.Error("expected refusal message")
+	}
+}
+
 // PushAddedMsg for a different article must NOT mutate this view —
 // guards against the broadcast-to-all + filter-by-id pattern from Step 7.
 func TestArticleView_IgnoresUnrelatedPush(t *testing.T) {

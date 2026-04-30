@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,10 +14,11 @@ import (
 // Deps bundles everything every screen may need. Pass-by-value into
 // constructors keeps screens self-contained.
 type Deps struct {
-	Store      *store.Store
-	Broker     *chat.Broker // nil during register
-	User       *store.User  // nil iff IsRegister
-	IsRegister bool
+	Store              *store.Store
+	Broker             *chat.Broker // nil during register
+	User               *store.User  // nil iff IsRegister
+	IsRegister         bool
+	MustChangePassword bool // true iff user must rotate password before reaching the main menu
 }
 
 // Root is the top-level tea.Model. It owns the active sub-model and
@@ -35,11 +37,18 @@ type Root struct {
 const toastDuration = 3 * time.Second
 
 // NewRoot builds the Root with the right initial sub-screen.
+//
+// Priority: IsRegister wins over MustChangePassword wins over the regular
+// authenticated main menu — these flags are mutually exclusive in practice
+// (set by the SSH password callback / makeProgramHandler).
 func NewRoot(deps Deps) Root {
 	r := Root{deps: deps}
-	if deps.IsRegister {
+	switch {
+	case deps.IsRegister:
 		r.sub = newRegisterModel(deps)
-	} else {
+	case deps.MustChangePassword:
+		r.sub = newPasswordChangeModel(deps)
+	default:
 		r.sub = newMainMenuModel(deps)
 	}
 	return r
@@ -106,7 +115,38 @@ func (m *Root) setToast(s string) {
 	m.toastUntil = time.Now().Add(toastDuration)
 }
 
+// guestWriteBlocked returns an ErrorMsg cmd if a guest is trying to enter
+// a write-capable screen, otherwise nil. Layer 1 of the read-only path.
+func (m Root) guestWriteBlocked(to Screen) tea.Cmd {
+	if m.deps.User == nil || m.deps.User.Role != store.RoleGuest {
+		return nil
+	}
+	switch to {
+	case ScreenPostCompose, ScreenWBCompose, ScreenMailCompose, ScreenAdminUsers:
+		return func() tea.Msg { return ErrorMsg{Err: errors.New("guest 為唯讀帳號 (read-only)")} }
+	}
+	return nil
+}
+
+// navigateNonAdminBlocked returns an ErrorMsg cmd if a non-admin tries
+// to reach the admin user-management screen.
+func (m Root) navigateNonAdminBlocked(to Screen) tea.Cmd {
+	if to != ScreenAdminUsers {
+		return nil
+	}
+	if m.deps.User != nil && m.deps.User.Role == store.RoleAdmin {
+		return nil
+	}
+	return func() tea.Msg { return ErrorMsg{Err: errors.New("管理員專用 (admin only)")} }
+}
+
 func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
+	if cmd := m.guestWriteBlocked(n.To); cmd != nil {
+		return m, cmd
+	}
+	if cmd := m.navigateNonAdminBlocked(n.To); cmd != nil {
+		return m, cmd
+	}
 	var sub tea.Model
 	switch n.To {
 	case ScreenMainMenu:
@@ -131,6 +171,10 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newMailThreadModel(m.deps, n.MailThreadID)
 	case ScreenMailCompose:
 		sub = newMailComposeModel(m.deps, n.Recipient, n.MailID)
+	case ScreenPasswordChange:
+		sub = newPasswordChangeModel(m.deps)
+	case ScreenAdminUsers:
+		sub = newAdminUsersModel(m.deps)
 	default:
 		// Unknown screen — leave sub untouched. Later steps add cases.
 		return m, nil

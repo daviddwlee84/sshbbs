@@ -25,6 +25,11 @@ type articleViewModel struct {
 	pushKind store.PushKind
 	pushIn   textinput.Model
 	err      string
+
+	// delete state. pendingDelete: showing the y/N confirm overlay.
+	// pushCursor: -1 = no push selected (D targets article); 0..len-1 = D targets that push.
+	pendingDelete bool
+	pushCursor    int
 }
 
 func newArticleViewModel(deps Deps, articleID int64) articleViewModel {
@@ -40,7 +45,37 @@ func newArticleViewModel(deps Deps, articleID int64) articleViewModel {
 	ti.CharLimit = 80
 	ti.Width = 60
 
-	return articleViewModel{deps: deps, article: a, pushes: pushes, loadErr: err, pushIn: ti}
+	return articleViewModel{deps: deps, article: a, pushes: pushes, loadErr: err, pushIn: ti, pushCursor: -1}
+}
+
+// canDeleteArticle returns true if the current user may delete the loaded
+// article (author, or mod-or-above). Used both as a permission gate at
+// the key handler and to decide whether to render the help-line hint.
+func (m articleViewModel) canDeleteArticle() bool {
+	if m.deps.User == nil || m.article == nil {
+		return false
+	}
+	if m.deps.User.ID == m.article.AuthorID {
+		return true
+	}
+	return m.deps.User.Role.AtLeast(store.RoleMod)
+}
+
+// canDeletePush mirrors canDeleteArticle for the push at index idx.
+func (m articleViewModel) canDeletePush(idx int) bool {
+	if m.deps.User == nil || idx < 0 || idx >= len(m.pushes) {
+		return false
+	}
+	if m.deps.User.ID == m.pushes[idx].UserID {
+		return true
+	}
+	return m.deps.User.Role.AtLeast(store.RoleMod)
+}
+
+// canPush returns true if the current user is allowed to add new pushes.
+// Guests can read but not write.
+func (m articleViewModel) canPush() bool {
+	return m.deps.User != nil && m.deps.User.Role != store.RoleGuest
 }
 
 func (m articleViewModel) Init() tea.Cmd { return nil }
@@ -68,6 +103,9 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.pushing {
 			return m.updatePushInput(msg)
+		}
+		if m.pendingDelete {
+			return m.updateDeleteConfirm(msg)
 		}
 		switch msg.String() {
 		case "esc", "backspace", "left", "h":
@@ -115,12 +153,108 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return NavigateMsg{To: ScreenArticleView, ArticleID: next, BoardID: m.article.BoardID}
 			}
 		case "+":
+			if !m.canPush() {
+				return m, nil
+			}
 			return m.openPush(store.PushKindPush), nil
 		case "-":
+			if !m.canPush() {
+				return m, nil
+			}
 			return m.openPush(store.PushKindBoo), nil
 		case "=":
+			if !m.canPush() {
+				return m, nil
+			}
 			return m.openPush(store.PushKindArrow), nil
+		case "p":
+			// Advance the push cursor. -1 → 0 → ... → len-1 → -1 (cycles
+			// back to "no selection, D targets the article").
+			if len(m.pushes) == 0 {
+				return m, nil
+			}
+			m.pushCursor++
+			if m.pushCursor >= len(m.pushes) {
+				m.pushCursor = -1
+			}
+			m.err = ""
+			return m, nil
+		case "P":
+			if len(m.pushes) == 0 {
+				return m, nil
+			}
+			if m.pushCursor < 0 {
+				m.pushCursor = len(m.pushes) - 1
+			} else {
+				m.pushCursor--
+			}
+			m.err = ""
+			return m, nil
+		case "D":
+			if m.pushCursor >= 0 {
+				if !m.canDeletePush(m.pushCursor) {
+					m.err = "權限不足 (only the push author or a mod can delete it)"
+					return m, nil
+				}
+			} else {
+				if !m.canDeleteArticle() {
+					m.err = "權限不足 (only the author or a mod can delete)"
+					return m, nil
+				}
+			}
+			m.pendingDelete = true
+			m.err = ""
+			return m, nil
 		}
+	}
+	return m, nil
+}
+
+// updateDeleteConfirm handles y/n while the confirm overlay is up.
+// y: dispatch the delete; if targeting a push, refresh the push list
+// and the article (for the score). If targeting the article, navigate
+// back to the board view.
+// n / esc: cancel.
+func (m articleViewModel) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		if m.article == nil || m.deps.User == nil {
+			m.pendingDelete = false
+			return m, nil
+		}
+		ctx := context.Background()
+		if m.pushCursor >= 0 && m.pushCursor < len(m.pushes) {
+			pushID := m.pushes[m.pushCursor].ID
+			if err := m.deps.Store.Pushes().Delete(ctx, pushID, m.deps.User.ID, m.deps.User.Role); err != nil {
+				m.err = err.Error()
+				m.pendingDelete = false
+				return m, nil
+			}
+			// Refresh the push list and re-fetch the article so its
+			// recommend_score reflects the reverted delta.
+			if pushes, err := m.deps.Store.Pushes().ListByArticle(ctx, m.article.ID); err == nil {
+				m.pushes = pushes
+			}
+			if a, err := m.deps.Store.Articles().GetByID(ctx, m.article.ID); err == nil {
+				m.article = a
+			}
+			// Clamp the cursor so the next D / p continues from a valid index.
+			if m.pushCursor >= len(m.pushes) {
+				m.pushCursor = -1
+			}
+			m.pendingDelete = false
+			return m, nil
+		}
+		if err := m.deps.Store.Articles().Delete(ctx, m.article.ID, m.deps.User.ID, m.deps.User.Role); err != nil {
+			m.err = err.Error()
+			m.pendingDelete = false
+			return m, nil
+		}
+		boardID := m.article.BoardID
+		return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardView, BoardID: boardID} }
+	case "n", "N", "esc":
+		m.pendingDelete = false
+		return m, nil
 	}
 	return m, nil
 }
@@ -224,14 +358,22 @@ func (m articleViewModel) View() string {
 
 	if len(m.pushes) > 0 {
 		b.WriteString("\n  " + StyleDim.Render(fmt.Sprintf("── 推文 (%d) ──", len(m.pushes))) + "\n")
-		for _, p := range m.pushes {
+		for i, p := range m.pushes {
 			ts := p.CreatedAt.Format("01/02 15:04")
-			line := fmt.Sprintf("  %s %s %s  %s",
+			gutter := "  "
+			if i == m.pushCursor {
+				gutter = "▸ "
+			}
+			line := fmt.Sprintf("%s%s %s %s  %s",
+				gutter,
 				renderPushKind(p.Kind),
 				PadRight(p.UserUserID, 14),
 				p.Body,
 				StyleDim.Render(ts),
 			)
+			if i == m.pushCursor {
+				line = StyleHighlight.Render(line)
+			}
 			b.WriteString(line + "\n")
 		}
 	}
@@ -245,8 +387,30 @@ func (m articleViewModel) View() string {
 			b.WriteString("  " + StyleError.Render("⚠ "+m.err) + "\n")
 		}
 		b.WriteString("  " + StyleHelp.Render("Enter send · Esc cancel"))
+	} else if m.pendingDelete {
+		prompt := "確定刪除這篇文章? (y/N)"
+		if m.pushCursor >= 0 && m.pushCursor < len(m.pushes) {
+			prompt = fmt.Sprintf("確定刪除推文 #%d? (y/N)", m.pushCursor+1)
+		}
+		b.WriteString("\n  " + StyleError.Render("⚠ "+prompt))
 	} else {
-		b.WriteString("\n  " + StyleHelp.Render("j/k scroll · + 推 · - 噓 · = → · Esc/← back · Ctrl+C disconnect"))
+		help := "j/k scroll"
+		if m.canPush() {
+			help += " · + 推 · - 噓 · = →"
+		}
+		if len(m.pushes) > 0 {
+			help += " · p/P 選推文"
+		}
+		if m.pushCursor >= 0 && m.canDeletePush(m.pushCursor) {
+			help += " · D 刪除推文"
+		} else if m.canDeleteArticle() {
+			help += " · D 刪除文章"
+		}
+		help += " · Esc/← back · Ctrl+C disconnect"
+		if m.err != "" {
+			b.WriteString("\n  " + StyleError.Render("⚠ "+m.err))
+		}
+		b.WriteString("\n  " + StyleHelp.Render(help))
 	}
 	b.WriteString("\n")
 	return b.String()

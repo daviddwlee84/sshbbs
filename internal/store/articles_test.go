@@ -141,6 +141,98 @@ func TestArticles_NeighboursOf(t *testing.T) {
 	}
 }
 
+func TestArticles_Delete_OwnerSucceeds(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "x", "y")
+
+	if err := st.Articles().Delete(ctx, a.ID, alice.ID, store.RoleUser); err != nil {
+		t.Fatalf("Delete(owner): %v", err)
+	}
+	if _, err := st.Articles().GetByID(ctx, a.ID); !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("after delete: got %v, want ErrArticleNotFound", err)
+	}
+}
+
+func TestArticles_Delete_NonOwnerNonModDenied(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "x", "y")
+
+	if err := st.Articles().Delete(ctx, a.ID, bob.ID, store.RoleUser); !errors.Is(err, store.ErrPermissionDenied) {
+		t.Errorf("got %v, want ErrPermissionDenied", err)
+	}
+	// Article should still exist.
+	if _, err := st.Articles().GetByID(ctx, a.ID); err != nil {
+		t.Errorf("article was deleted despite permission error: %v", err)
+	}
+}
+
+func TestArticles_Delete_ModAndAdminCanDeleteAnyones(t *testing.T) {
+	ctx := context.Background()
+	board := storetest.MustBoard(t, storetest.New(t), "Test") // separate sanity store
+	_ = board                                                 // unused; per-case stores below
+
+	cases := []store.Role{store.RoleMod, store.RoleAdmin}
+	for _, role := range cases {
+		t.Run(string(role), func(t *testing.T) {
+			st := storetest.New(t)
+			alice := storetest.MustUser(t, st, "alice", "")
+			bob := storetest.MustUser(t, st, "bob", "")
+			board := storetest.MustBoard(t, st, "Test")
+			a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "x", "y")
+
+			if err := st.Articles().Delete(ctx, a.ID, bob.ID, role); err != nil {
+				t.Fatalf("Delete(%s): %v", role, err)
+			}
+			if _, err := st.Articles().GetByID(ctx, a.ID); !errors.Is(err, store.ErrArticleNotFound) {
+				t.Errorf("after %s delete: got %v, want ErrArticleNotFound", role, err)
+			}
+		})
+	}
+}
+
+func TestArticles_Delete_NotFound(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	if err := st.Articles().Delete(ctx, 9999, alice.ID, store.RoleUser); !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("got %v, want ErrArticleNotFound", err)
+	}
+}
+
+func TestArticles_Delete_CascadesPushes(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "x", "y")
+	if _, err := st.Pushes().Create(ctx, a.ID, bob.ID, bob.UserID, store.PushKindPush, "+1"); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
+	pre, _ := st.Pushes().ListByArticle(ctx, a.ID)
+	if len(pre) != 1 {
+		t.Fatalf("seed push count = %d, want 1", len(pre))
+	}
+
+	if err := st.Articles().Delete(ctx, a.ID, alice.ID, store.RoleUser); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	post, err := st.Pushes().ListByArticle(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("ListByArticle after delete: %v", err)
+	}
+	if len(post) != 0 {
+		t.Errorf("pushes not cascaded: %d remain", len(post))
+	}
+}
+
 func TestArticles_BoardIsolation(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)

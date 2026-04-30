@@ -27,13 +27,31 @@ func PasswordAuth(st *store.Store) ssh.PasswordHandler {
 		}
 		ctx.SetValue(ctxKeyRemoteHost, host)
 
-		if ctx.User() == auth.ReservedUsernameNew {
+		switch ctx.User() {
+		case auth.ReservedUsernameNew:
 			ctx.SetValue(ctxKeyRegister, true)
+			return true
+		case auth.ReservedUsernameGuest:
+			// Read-only spectator: short-circuit to the seeded guest row,
+			// no password check. Refuse if seeding never ran or the row
+			// was tampered to a non-guest role.
+			u, err := st.Users().GetByUserID(context.Background(), auth.ReservedUsernameGuest)
+			if err != nil || u.Role != store.RoleGuest {
+				log.Warn("guest login refused", "host", host, "err", err)
+				return false
+			}
+			ctx.SetValue(ctxKeyUserID, u.ID)
+			log.Info("auth ok (guest)", "host", host)
 			return true
 		}
 		user, err := auth.VerifyLogin(context.Background(), st, ctx.User(), password, host)
 		if err != nil {
 			log.Info("auth failed", "user", ctx.User(), "host", host, "err", err)
+			return false
+		}
+		if auth.MustChangePasswordRemoteBlocked(user, host) {
+			log.Warn("admin remote login blocked while must_change_password=1",
+				"user", user.UserID, "host", host)
 			return false
 		}
 		ctx.SetValue(ctxKeyUserID, user.ID)

@@ -61,8 +61,20 @@ func makeProgramHandler(st *store.Store, broker *chat.Broker) bubbletea.ProgramH
 		}
 
 		deps := tui.Deps{Store: st, User: user, Broker: broker}
+		if user.MustChangePassword {
+			deps.MustChangePassword = true
+		}
 		m := tui.NewRoot(deps)
 		p := tea.NewProgram(m, append(bubbletea.MakeOptions(sess), tea.WithAltScreen())...)
+
+		// Guests are read-only spectators. We deliberately don't register
+		// them in the broker — multiple `ssh guest@...` clients would
+		// collide on the same user.ID, they can't reply to water balloons,
+		// and they don't appear in the online list.
+		if user.Role == store.RoleGuest {
+			log.Info("guest session", "host", deps.User.UserID)
+			return p
+		}
 
 		// Hook session into the broker so other users can send to us.
 		cs := &chat.Session{UserID: user.ID, UserIDStr: user.UserID, Program: p}

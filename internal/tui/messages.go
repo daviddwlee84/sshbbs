@@ -15,6 +15,8 @@ const (
 	ScreenMailInbox
 	ScreenMailThread
 	ScreenMailCompose
+	ScreenPasswordChange
+	ScreenAdminUsers
 )
 
 // NavigateMsg is emitted by sub-screens to ask the Root to swap screens.

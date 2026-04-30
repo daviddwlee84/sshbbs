@@ -12,9 +12,24 @@ import (
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
-// ReservedUsernameNew is the SSH username that triggers the in-TUI register
-// flow instead of a real DB login.
-const ReservedUsernameNew = "new"
+// Reserved SSH usernames. `new` triggers the in-TUI register flow;
+// `guest` short-circuits to a read-only spectator account; `admin` is
+// the bootstrapped administrator and may not be re-registered.
+const (
+	ReservedUsernameNew   = "new"
+	ReservedUsernameGuest = "guest"
+	ReservedUsernameAdmin = "admin"
+)
+
+// IsReservedUsername reports whether s matches one of the three reserved
+// SSH usernames (case-insensitive). Used by Register to refuse the names
+// and by the SSH password callback to dispatch to the right flow.
+func IsReservedUsername(s string) bool {
+	s = strings.TrimSpace(s)
+	return strings.EqualFold(s, ReservedUsernameNew) ||
+		strings.EqualFold(s, ReservedUsernameGuest) ||
+		strings.EqualFold(s, ReservedUsernameAdmin)
+}
 
 const (
 	bcryptCost     = 12
@@ -30,11 +45,37 @@ var (
 	ErrInvalidPassword  = fmt.Errorf("password must be %d-%d characters", minPasswordLen, maxPasswordLen)
 	ErrNicknameTooLong  = fmt.Errorf("nickname must be %d characters or fewer", maxNickname)
 	ErrEmailTooLong     = fmt.Errorf("email must be %d characters or fewer", maxEmail)
-	ErrReservedUsername = fmt.Errorf("user id %q is reserved", ReservedUsernameNew)
+	ErrReservedUsername = fmt.Errorf("user id is reserved (%q / %q / %q)",
+		ReservedUsernameNew, ReservedUsernameGuest, ReservedUsernameAdmin)
 	ErrBadCredentials   = errors.New("invalid user id or password")
 )
 
 var userIDRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{2,11}$`)
+
+// ValidatePassword enforces the length rules. Used by Register and the
+// password-change screen so the rules don't drift between call sites.
+func ValidatePassword(password string) error {
+	if l := len(password); l < minPasswordLen || l > maxPasswordLen {
+		return ErrInvalidPassword
+	}
+	return nil
+}
+
+// HashPassword returns a bcrypt hash at the package's standard cost.
+// Callers outside auth (TUI, seed) use this so bcryptCost stays in one place.
+func HashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+	return string(hash), nil
+}
+
+// VerifyPasswordHash returns nil when the hash matches the password.
+// Callers outside auth use this instead of importing bcrypt directly.
+func VerifyPasswordHash(hash, password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+}
 
 // Register validates inputs, hashes the password with bcrypt, and inserts a
 // new user. Returns ErrUserExists on UNIQUE conflict.
@@ -46,11 +87,11 @@ func Register(ctx context.Context, st *store.Store, userID, password, nickname, 
 	if !userIDRe.MatchString(userID) {
 		return nil, ErrInvalidUserID
 	}
-	if strings.EqualFold(userID, ReservedUsernameNew) {
+	if IsReservedUsername(userID) {
 		return nil, ErrReservedUsername
 	}
-	if l := len(password); l < minPasswordLen || l > maxPasswordLen {
-		return nil, ErrInvalidPassword
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
 	}
 	if len([]rune(nickname)) > maxNickname {
 		return nil, ErrNicknameTooLong
@@ -59,12 +100,12 @@ func Register(ctx context.Context, st *store.Store, userID, password, nickname, 
 		return nil, ErrEmailTooLong
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	hash, err := HashPassword(password)
 	if err != nil {
-		return nil, fmt.Errorf("hash password: %w", err)
+		return nil, err
 	}
 
-	u, err := st.Users().Create(ctx, userID, string(hash), nickname, email)
+	u, err := st.Users().Create(ctx, userID, hash, nickname, email)
 	if err != nil {
 		// modernc.org/sqlite returns a wrapped UNIQUE error; check the text.
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -89,6 +130,13 @@ func VerifyLogin(ctx context.Context, st *store.Store, userID, password, host st
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 		return nil, ErrBadCredentials
+	}
+	// Skip NoteLogin for guest — the row is shared across every spectator
+	// session, so num_logins / last_login_at are meaningless and the write
+	// would just create contention. Defensive: the SSH password callback
+	// short-circuits guest before calling VerifyLogin in normal flow.
+	if u.Role == store.RoleGuest {
+		return u, nil
 	}
 	if err := st.Users().NoteLogin(ctx, u.ID, host); err != nil {
 		return nil, fmt.Errorf("note login: %w", err)

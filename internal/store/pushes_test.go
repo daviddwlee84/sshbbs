@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -78,6 +79,138 @@ func TestPushes_InvalidKind(t *testing.T) {
 	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
 	if _, err := st.Pushes().Create(ctx, art.ID, alice.ID, alice.UserID, "bogus", "x"); err == nil {
 		t.Error("expected error for invalid kind, got nil")
+	}
+}
+
+// Delete: owner can remove their own push; non-owner non-mod refused;
+// mod/admin can remove anyone's. Score is reverted symmetrically with
+// the kind's create-time delta.
+func TestPushes_Delete_Permissions(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+
+	insertPush := func(kind store.PushKind, by *store.User) *store.Push {
+		p, err := st.Pushes().Create(ctx, art.ID, by.ID, by.UserID, kind, "msg")
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		return p
+	}
+
+	// Owner can delete their own.
+	p := insertPush(store.PushKindPush, alice)
+	if err := st.Pushes().Delete(ctx, p.ID, alice.ID, store.RoleUser); err != nil {
+		t.Errorf("owner delete: %v", err)
+	}
+
+	// Non-owner non-mod denied.
+	p = insertPush(store.PushKindPush, alice)
+	if err := st.Pushes().Delete(ctx, p.ID, bob.ID, store.RoleUser); !errors.Is(err, store.ErrPermissionDenied) {
+		t.Errorf("non-owner: got %v, want ErrPermissionDenied", err)
+	}
+
+	// Mod can delete anyone's.
+	if err := st.Pushes().Delete(ctx, p.ID, bob.ID, store.RoleMod); err != nil {
+		t.Errorf("mod delete: %v", err)
+	}
+
+	// Admin can delete anyone's.
+	p = insertPush(store.PushKindBoo, alice)
+	if err := st.Pushes().Delete(ctx, p.ID, bob.ID, store.RoleAdmin); err != nil {
+		t.Errorf("admin delete: %v", err)
+	}
+
+	// Not found.
+	if err := st.Pushes().Delete(ctx, 99999, alice.ID, store.RoleAdmin); !errors.Is(err, store.ErrPushNotFound) {
+		t.Errorf("missing push: got %v, want ErrPushNotFound", err)
+	}
+}
+
+// Delete reverts the score symmetrically with create's delta.
+// Push +1 → delete -1, boo -1 → delete +1, arrow 0 → delete 0.
+func TestPushes_Delete_RevertsScore(t *testing.T) {
+	cases := []struct {
+		kind          store.PushKind
+		preDeleteWant int64 // recommend_score after Create
+	}{
+		{store.PushKindPush, 1},
+		{store.PushKindBoo, -1},
+		{store.PushKindArrow, 0},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			ctx := context.Background()
+			st := storetest.New(t)
+			alice := storetest.MustUser(t, st, "alice", "")
+			board := storetest.MustBoard(t, st, "Test")
+			art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+
+			p, err := st.Pushes().Create(ctx, art.ID, alice.ID, alice.UserID, tc.kind, "msg")
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			pre, _ := st.Articles().GetByID(ctx, art.ID)
+			if pre.RecommendScore != tc.preDeleteWant {
+				t.Fatalf("after Create: score = %d, want %d", pre.RecommendScore, tc.preDeleteWant)
+			}
+			if err := st.Pushes().Delete(ctx, p.ID, alice.ID, store.RoleUser); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			post, _ := st.Articles().GetByID(ctx, art.ID)
+			if post.RecommendScore != 0 {
+				t.Errorf("after Delete: score = %d, want 0 (reverted)", post.RecommendScore)
+			}
+		})
+	}
+}
+
+// TestPushes_Delete_ConcurrentScoreAtomicity mirrors the Create canary:
+// 50 simultaneous deletes must net to a score of 0 (each starts +1,
+// reverts -1). Run with `go test -race`.
+func TestPushes_Delete_ConcurrentScoreAtomicity(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, alice.ID, alice.UserID, "t", "b")
+
+	const N = 50
+	ids := make([]int64, N)
+	for i := 0; i < N; i++ {
+		p, err := st.Pushes().Create(ctx, art.ID, alice.ID, alice.UserID, store.PushKindPush, "x")
+		if err != nil {
+			t.Fatalf("seed Create: %v", err)
+		}
+		ids[i] = p.ID
+	}
+	pre, _ := st.Articles().GetByID(ctx, art.ID)
+	if pre.RecommendScore != int64(N) {
+		t.Fatalf("post-seed score = %d, want %d", pre.RecommendScore, N)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for _, id := range ids {
+		go func(pid int64) {
+			defer wg.Done()
+			if err := st.Pushes().Delete(ctx, pid, alice.ID, store.RoleUser); err != nil {
+				t.Errorf("Delete: %v", err)
+			}
+		}(id)
+	}
+	wg.Wait()
+
+	post, _ := st.Articles().GetByID(ctx, art.ID)
+	if post.RecommendScore != 0 {
+		t.Errorf("after %d concurrent deletes: score = %d, want 0", N, post.RecommendScore)
+	}
+	left, _ := st.Pushes().ListByArticle(ctx, art.ID)
+	if len(left) != 0 {
+		t.Errorf("after %d concurrent deletes: %d pushes remain", N, len(left))
 	}
 }
 

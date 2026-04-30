@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 
+	"github.com/daviddwlee84/sshbbs/internal/auth"
 	"github.com/daviddwlee84/sshbbs/internal/chat"
 	"github.com/daviddwlee84/sshbbs/internal/server"
 	"github.com/daviddwlee84/sshbbs/internal/store"
@@ -23,6 +24,8 @@ func main() {
 	addr := flag.String("addr", ":2222", "SSH listen address")
 	dbPath := flag.String("db", "data/bbs.db", "SQLite database path")
 	hostkey := flag.String("hostkey", ".ssh/host_ed25519", "SSH host key path")
+	adminPassword := flag.String("admin-password", "",
+		"override admin password on first seed; empty uses the baked default 'admin' with must_change_password=1")
 	flag.Parse()
 
 	st, err := store.Open(*dbPath)
@@ -32,6 +35,11 @@ func main() {
 	defer st.Close()
 	if err := st.Boards().SeedDefaults(context.Background()); err != nil {
 		log.Fatalf("seed boards: %v", err)
+	}
+	if err := auth.SeedSystemAccounts(context.Background(), st, auth.SeedOpts{
+		AdminPassword: *adminPassword,
+	}); err != nil {
+		log.Fatalf("seed system accounts: %v", err)
 	}
 	log.Printf("storage ready at %s", *dbPath)
 

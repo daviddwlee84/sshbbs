@@ -51,7 +51,11 @@ func TestRegister_Validations(t *testing.T) {
 	}{
 		{"short userid", "ab", "pw123456", "", "", auth.ErrInvalidUserID},
 		{"bad userid char", "ali!ce", "pw123456", "", "", auth.ErrInvalidUserID},
-		{"reserved name", "new", "pw123456", "", "", auth.ErrReservedUsername},
+		{"reserved new", "new", "pw123456", "", "", auth.ErrReservedUsername},
+		{"reserved guest", "guest", "pw123456", "", "", auth.ErrReservedUsername},
+		{"reserved admin", "admin", "pw123456", "", "", auth.ErrReservedUsername},
+		{"reserved NEW (mixed case)", "NEW", "pw123456", "", "", auth.ErrReservedUsername},
+		{"reserved Admin (mixed case)", "Admin", "pw123456", "", "", auth.ErrReservedUsername},
 		{"short password", "alice", "x", "", "", auth.ErrInvalidPassword},
 	}
 	for _, tc := range cases {
@@ -59,6 +63,31 @@ func TestRegister_Validations(t *testing.T) {
 			_, err := auth.Register(ctx, st, tc.userID, tc.pw, tc.nick, tc.email)
 			if !errors.Is(err, tc.want) {
 				t.Errorf("got %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsReservedUsername(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"new", true},
+		{"NEW", true},
+		{"  new  ", true},
+		{"guest", true},
+		{"Guest", true},
+		{"admin", true},
+		{"ADMIN", true},
+		{"alice", false},
+		{"", false},
+		{"newish", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := auth.IsReservedUsername(tc.in); got != tc.want {
+				t.Errorf("IsReservedUsername(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
 	}

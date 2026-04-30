@@ -100,8 +100,14 @@ func (m boardViewModel) View() string {
 		return b.String()
 	}
 	if len(m.articles) == 0 {
-		b.WriteString("  " + StyleDim.Render("(no articles yet — press p to write one)") + "\n")
-		b.WriteString("\n  " + StyleHelp.Render("p post · Esc/←/h back · Ctrl+C disconnect"))
+		hint := "(no articles yet — press p to write one)"
+		help := "p post · Esc/←/h back · Ctrl+C disconnect"
+		if m.isGuest() {
+			hint = "(no articles yet)"
+			help = "Esc/←/h back · Ctrl+C disconnect"
+		}
+		b.WriteString("  " + StyleDim.Render(hint) + "\n")
+		b.WriteString("\n  " + StyleHelp.Render(help))
 		return b.String()
 	}
 
@@ -145,7 +151,15 @@ func (m boardViewModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l open · p post · Esc/←/h back · Ctrl+C disconnect"))
+	help := "↑/↓ j/k move · Enter/→/l open · p post · Esc/←/h back · Ctrl+C disconnect"
+	if m.isGuest() {
+		help = "↑/↓ j/k move · Enter/→/l open · Esc/←/h back · Ctrl+C disconnect"
+	}
+	b.WriteString("\n  " + StyleHelp.Render(help))
 	b.WriteString("\n")
 	return b.String()
+}
+
+func (m boardViewModel) isGuest() bool {
+	return m.deps.User != nil && m.deps.User.Role == store.RoleGuest
 }
