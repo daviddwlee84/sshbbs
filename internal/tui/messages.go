@@ -25,6 +25,7 @@ const (
 	ScreenUserSettings
 	ScreenBioEdit
 	ScreenNotifySettings
+	ScreenLocaleSettings
 )
 
 // NavigateMsg is emitted by sub-screens to ask the Root to swap screens.

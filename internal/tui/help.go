@@ -151,8 +151,19 @@ var screenHelp = map[Screen][]helpSection{
 		Entries: []HelpEntry{
 			{"↑/↓ j/k", "move cursor"},
 			{"Enter/→/l", "open sub-screen"},
-			{"1-4", "jump to numbered slot"},
+			{"1-5", "jump to numbered slot"},
 			{"Esc/←/h q", "back to main menu"},
+		},
+	}},
+	ScreenLocaleSettings: {{
+		Heading: "Locale settings",
+		Entries: []HelpEntry{
+			{"↑/↓ j/k", "move cursor"},
+			{"Enter/Space/→/l", "select highlighted locale"},
+			{"1-2", "jump to numbered locale"},
+			{"Ctrl+S", "save"},
+			{"Esc/←/h", "back to user settings (discard unsaved)"},
+			{"Q", "back to main menu"},
 		},
 	}},
 	ScreenNotifySettings: {{

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 )
 
 // userSettingsModel is the "個人設定" sub-menu reached from the main menu.
@@ -18,9 +20,11 @@ type userSettingsModel struct {
 }
 
 func newUserSettingsModel(deps Deps) userSettingsModel {
+	loc := localeOf(deps)
 	items := []menuItem{
 		{label: "修改密碼 Change password", hint: "current → new → confirm", to: ScreenPasswordChange},
 		{label: "修改 Bio Edit bio", hint: "free-form profile blurb", to: ScreenBioEdit},
+		{label: i18n.T(loc, i18n.ScreenUserSettingsLocale), hint: i18n.T(loc, i18n.ScreenUserSettingsLocaleHint), to: ScreenLocaleSettings},
 		{label: "通知設定 Notification settings", hint: "webhook targets + per-event toggles", to: ScreenNotifySettings},
 		{label: "返回 Back", hint: "main menu", to: ScreenMainMenu},
 	}
@@ -49,7 +53,7 @@ func (m userSettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ", "right", "l":
 			it := m.items[m.cursor]
 			return m, func() tea.Msg { return NavigateMsg{To: it.to} }
-		case "1", "2", "3", "4":
+		case "1", "2", "3", "4", "5":
 			idx := int(k.String()[0] - '1')
 			if idx < len(m.items) {
 				it := m.items[idx]
@@ -99,7 +103,7 @@ func (m userSettingsModel) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-4 jump · Esc/←/h back"))
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-5 jump · Esc/←/h back"))
 	b.WriteString("\n")
 	return b.String()
 }

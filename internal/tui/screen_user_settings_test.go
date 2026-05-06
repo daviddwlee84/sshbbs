@@ -17,8 +17,9 @@ func TestUserSettings_NavigatesPerEntry(t *testing.T) {
 	}{
 		{"1", ScreenPasswordChange},
 		{"2", ScreenBioEdit},
-		{"3", ScreenNotifySettings},
-		{"4", ScreenMainMenu}, // 返回
+		{"3", ScreenLocaleSettings},
+		{"4", ScreenNotifySettings},
+		{"5", ScreenMainMenu}, // 返回
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {

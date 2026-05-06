@@ -22,6 +22,7 @@ type User struct {
 	Role               Role
 	MustChangePassword bool
 	Bio                string
+	Locale             string
 }
 
 type UserRepo struct{ s *Store }
@@ -32,7 +33,7 @@ var (
 )
 
 const userColumns = `id, user_id, password_hash, nickname, realname, email,
-	num_logins, num_posts, last_login_at, last_host, created_at, role, must_change_password, bio`
+	num_logins, num_posts, last_login_at, last_host, created_at, role, must_change_password, bio, locale`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
@@ -40,7 +41,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	err := row.Scan(
 		&u.ID, &u.UserID, &u.PasswordHash, &u.Nickname, &u.RealName, &u.Email,
 		&u.NumLogins, &u.NumPosts, &u.LastLoginAt, &u.LastHost, &u.CreatedAt,
-		&u.Role, &mustChange, &u.Bio,
+		&u.Role, &mustChange, &u.Bio, &u.Locale,
 	)
 	u.MustChangePassword = mustChange != 0
 	return u, err
@@ -133,6 +134,19 @@ func (r *UserRepo) SetPassword(ctx context.Context, id int64, passwordHash strin
 	_, err := r.s.db.ExecContext(ctx,
 		`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`,
 		passwordHash, id,
+	)
+	return err
+}
+
+// SetLocale updates the user's UI locale preference. Callers (the
+// locale-settings screen) are responsible for validating the value via
+// i18n.Valid before invoking — the store accepts any string so seed/admin
+// paths can write to it without importing internal/i18n.
+func (r *UserRepo) SetLocale(ctx context.Context, id int64, locale string) error {
+	r.s.writeMu.Lock()
+	defer r.s.writeMu.Unlock()
+	_, err := r.s.db.ExecContext(ctx,
+		`UPDATE users SET locale = ? WHERE id = ?`, locale, id,
 	)
 	return err
 }

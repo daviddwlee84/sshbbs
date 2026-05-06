@@ -235,6 +235,8 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newBioEditModel(m.deps)
 	case ScreenNotifySettings:
 		sub = newNotifySettingsModel(m.deps)
+	case ScreenLocaleSettings:
+		sub = newLocaleSettingsModel(m.deps)
 	default:
 		// Unknown screen — leave sub untouched. Later steps add cases.
 		return m, nil

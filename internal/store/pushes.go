@@ -30,6 +30,12 @@ const (
 	PushKindArrow PushKind = "arrow" // → (0)
 )
 
+// Glyph returns the canonical CJK glyph for the kind. This is the
+// markdown round-trip format — internal/markdown.Format writes these
+// glyphs and internal/markdown.parsePushLine only recognises 推/噓/→.
+// It MUST stay locale-independent. For locale-aware UI rendering use
+// internal/i18n.PushGlyph instead, which keeps the canonical glyph in
+// zh-TW mode and substitutes 👍/👎 (same display width) in en mode.
 func (k PushKind) Glyph() string {
 	switch k {
 	case PushKindPush:
