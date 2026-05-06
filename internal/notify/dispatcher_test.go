@@ -228,6 +228,79 @@ func TestDispatcher_ConcurrentDispatchNoLeak(t *testing.T) {
 	mgr.Stop()
 }
 
+func TestDispatcher_SendTest_Success(t *testing.T) {
+	rec := &recorder{}
+	srv := httptest.NewServer(rec.handler())
+	defer srv.Close()
+
+	st := storetest.New(t)
+	mgr := notify.New(st, &fakeOnline{})
+	target := &store.NotifyTarget{ID: 1, URL: srv.URL}
+
+	err := mgr.SendTest(context.Background(), target, notify.Event{
+		Title: "test", Body: "hello",
+	})
+	if err != nil {
+		t.Fatalf("SendTest: %v", err)
+	}
+	if got := atomic.LoadInt32(&rec.hits); got != 1 {
+		t.Errorf("hits = %d, want 1", got)
+	}
+}
+
+func TestDispatcher_SendTest_4xxReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"message":"bad payload"}`))
+	}))
+	defer srv.Close()
+
+	st := storetest.New(t)
+	mgr := notify.New(st, &fakeOnline{})
+	target := &store.NotifyTarget{ID: 1, URL: srv.URL}
+
+	err := mgr.SendTest(context.Background(), target, notify.Event{Title: "t", Body: "b"})
+	if err == nil {
+		t.Fatal("SendTest with 400 returned nil error, want error")
+	}
+	// Body excerpt must be in the error so the user sees the receiver's
+	// complaint, not just a bare status code.
+	if !contains(err.Error(), "400") || !contains(err.Error(), "bad payload") {
+		t.Errorf("err = %q, want HTTP 400 + body excerpt", err)
+	}
+}
+
+func TestDispatcher_SendTest_BypassesPrefsAndQueue(t *testing.T) {
+	rec := &recorder{}
+	srv := httptest.NewServer(rec.handler())
+	defer srv.Close()
+
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	// Disable every kind so a real Dispatch would no-op. SendTest must
+	// fire anyway because users testing a webhook URL haven't necessarily
+	// configured prefs yet.
+	_ = st.Notify().SetPrefs(context.Background(), alice.ID, store.NotifyPrefs{})
+
+	mgr := notify.New(st, &fakeOnline{})
+	target := &store.NotifyTarget{ID: 1, UserID: alice.ID, URL: srv.URL}
+	if err := mgr.SendTest(context.Background(), target, notify.Event{Title: "t", Body: "b"}); err != nil {
+		t.Fatalf("SendTest: %v", err)
+	}
+	if got := atomic.LoadInt32(&rec.hits); got != 1 {
+		t.Errorf("SendTest didn't reach receiver despite prefs all-off (hits=%d)", got)
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 // Dispatch after Stop must not panic — guards the closed-channel send race.
 func TestDispatcher_DispatchAfterStop(t *testing.T) {
 	st := storetest.New(t)

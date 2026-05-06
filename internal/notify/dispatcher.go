@@ -12,7 +12,10 @@ package notify
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,6 +153,31 @@ func (m *Manager) worker(ctx context.Context) {
 			m.deliver(ctx, ev)
 		}
 	}
+}
+
+// SendTest synchronously delivers one notification to a single target,
+// bypassing both user prefs and the dispatch queue. Powers the "T"
+// affordance on the notify-settings screen so users can verify a freshly
+// added webhook URL without triggering a real event.
+//
+// Returns nil on 2xx/3xx, an error on transport failure or 4xx/5xx
+// (with a short body excerpt to surface receiver-side complaints like
+// Discord's "embed exceeds maximum size of 6000").
+func (m *Manager) SendTest(ctx context.Context, target *store.NotifyTarget, ev Event) error {
+	req, err := buildRequest(ctx, target, ev)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		excerpt, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(excerpt)))
+	}
+	return nil
 }
 
 func (m *Manager) deliver(ctx context.Context, ev Event) {

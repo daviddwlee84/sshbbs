@@ -4,12 +4,22 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
+
+// notifyTestResultMsg is delivered by the goroutine that ran SendTest.
+// The screen renders msg.err in the error/flash row so the user sees
+// the HTTP outcome inline.
+type notifyTestResultMsg struct {
+	targetID int64
+	err      error
+}
 
 // notifySettingsModel is the unified screen for the per-event toggles
 // (user_notif_prefs) and webhook target list (user_notif_targets).
@@ -111,6 +121,16 @@ func (m notifySettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEdit(msg)
 		}
 		return m.updateList(msg)
+
+	case notifyTestResultMsg:
+		if msg.err != nil {
+			m.err = fmt.Sprintf("target #%d test failed: %v", msg.targetID, msg.err)
+			m.flash = ""
+		} else {
+			m.flash = fmt.Sprintf("✓ target #%d test delivered — check your receiver", msg.targetID)
+			m.err = ""
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -163,6 +183,15 @@ func (m notifySettingsModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if m.cursor >= notifPrefCount && m.cursor < m.addRowIndex() {
 			m.deleteTarget()
+		}
+		return m, nil
+	case "T":
+		// Send a synthetic test notification to the cursored target.
+		// Bypasses prefs (so users can test before flipping any toggles)
+		// and bypasses the dispatch queue (so we get a synchronous
+		// pass/fail to surface in the flash row).
+		if m.cursor >= notifPrefCount && m.cursor < m.addRowIndex() {
+			return m, m.startTest()
 		}
 		return m, nil
 	case "enter", "right", "l":
@@ -261,6 +290,53 @@ func (m *notifySettingsModel) toggleTarget() {
 		m.flash = "✓ 已停用 target #" + fmt.Sprint(t.ID)
 	}
 	m.err = ""
+}
+
+// startTest fires a one-shot test notification at the cursored target.
+// Returns a tea.Cmd that runs the HTTP call in a goroutine (the
+// dispatcher's http.Client has a 5s timeout) and rendezvous-es the
+// result back as a notifyTestResultMsg.
+func (m *notifySettingsModel) startTest() tea.Cmd {
+	idx := m.cursor - notifPrefCount
+	if idx < 0 || idx >= len(m.targets) {
+		return nil
+	}
+	t := m.targets[idx]
+	if m.deps.Notify == nil {
+		// Tests / register-only sessions: no dispatcher wired up. Fail
+		// loud rather than silently no-op.
+		m.err = "notify dispatcher not initialised"
+		return nil
+	}
+	m.flash = fmt.Sprintf("🔔 testing target #%d…", t.ID)
+	m.err = ""
+	// Snapshot the values the goroutine needs so we don't reach back into
+	// the model after returning (model updates are funnelled through
+	// Update by bubbletea's main loop).
+	target := *t
+	user := ""
+	if m.deps.User != nil {
+		user = m.deps.User.UserID
+	}
+	dispatcher := m.deps.Notify
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		ev := notify.Event{
+			Kind:       notify.KindPush, // bypassed by SendTest; here just for log readability
+			ToUserID:   target.UserID,
+			FromUserID: user,
+			Title:      "[BBS-test] notification target verified",
+			Body: fmt.Sprintf(
+				"User: %s\nTarget: #%d (%s)\nTime: %s\n\nIf you can read this, the webhook URL is wired up correctly.",
+				user, target.ID, target.Label, time.Now().Format("2006-01-02 15:04:05"),
+			),
+		}
+		return notifyTestResultMsg{
+			targetID: target.ID,
+			err:      dispatcher.SendTest(ctx, &target, ev),
+		}
+	}
 }
 
 func (m *notifySettingsModel) deleteTarget() {
@@ -456,7 +532,7 @@ func (m notifySettingsModel) View() string {
 	if m.flash != "" {
 		b.WriteString("\n  " + StyleSuccess.Render(m.flash))
 	}
-	b.WriteString("\n  " + StyleHelp.Render("j/k move · Space toggle/select · Ctrl+S save prefs · a 新增 · e 編輯 · t 啟停 · d 刪除 · Esc back"))
+	b.WriteString("\n  " + StyleHelp.Render("j/k move · Space toggle/select · Ctrl+S save prefs · a 新增 · e 編輯 · t 啟停 · T 測試 · d 刪除 · Esc back"))
 	b.WriteString("\n")
 	return b.String()
 }

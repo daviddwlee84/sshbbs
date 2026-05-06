@@ -18819,3 +18819,357 @@ Snapshot dirty state
 ?? internal/notify/encoder_test.go
 ```
 </details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:02:40Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage feature + agent artifacts, secret-scan
+
+`git add README.md docker-compose.yml docs/notifications.md internal/notify/dispatcher.go internal/notify/encoder.go internal/notify/encoder_test.go internal/tui/screen_notify_settings.go && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/stage-agent-artifacts.sh && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/scan-staged.sh && echo SCAN-CLEAN`
+
+```text
+staged: .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+1 artifact(s) would be staged.
+SCAN-CLEAN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:02:58Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit the encoder + framing changes
+
+```bash
+git commit -m "$(cat <<'EOF'
+Notify: Discord auto-detect + reframe webhook target as user-supplied
+
+The previous commit positioned the bundled apprise-api as the default
+deployment story. That has two problems on a multi-user BBS:
+
+- apprise-api admin REST on :8000 has no auth, so any user with network
+  reach can read/edit/delete every other user's keys.
+- All users' apprise:// URLs (containing Discord/Telegram/SMTP creds)
+  end up plaintext on the operator's host.
+
+Reframe: BBS just POSTs JSON to whatever URL each user configures.
+That URL can be a Discord webhook directly, ntfy.sh, the user's own
+apprise instance, Slack, anything. The bundled apprise-api becomes
+opt-in for single-user homelab / demo cases.
+
+- docker-compose.yml: apprise gated behind `profiles: ["demo"]`;
+  removed from sshbbs.depends_on. `docker compose up -d` no longer
+  starts it; `docker compose --profile demo up -d` does.
+- internal/notify/encoder.go (new): URL-prefix-based encoder selection.
+  Discord webhook URLs (discord.com / discordapp.com / canary / ptb
+  variants) get the embed envelope Discord requires. Everything else
+  gets the flat {title, body} JSON apprise/ntfy/generic receivers
+  expect. CJK-safe truncation to 256/4096 runes for Discord limits.
+- internal/notify/dispatcher.go: post() refactored to call buildRequest
+  so per-target encoders can produce independent payloads.
+- internal/notify/encoder_test.go (new): detectFormat table, Discord
+  payload shape + truncation + empty-embed guard, apprise default,
+  truncateRunes unit tests.
+- docs/notifications.md: full rewrite. Three walkthroughs (Discord
+  direct / ntfy.sh / self-hosted apprise), demo profile clearly
+  labeled, Operator threat model section, both payload formats
+  documented.
+- README.md: feature line neutralized; no longer name-drops apprise
+  as the recommended path.
+- screen_notify_settings: URL placeholder now leads with Discord/ntfy
+  hints rather than apprise-specific text.
+
+User experience: paste a Discord webhook URL into 通知設定 and the
+BBS auto-detects → embed-format notification, no flag, no format
+selector, no apprise sidecar required.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" 2>&1 | tail -10
+```
+
+```text
+[main 2f8728c] Notify: Discord auto-detect + reframe webhook target as user-supplied
+ 8 files changed, 1631 insertions(+), 162 deletions(-)
+ create mode 100644 internal/notify/encoder.go
+ create mode 100644 internal/notify/encoder_test.go
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:03:05Z)**_
+
+Committed `2f8728c`. Tree clean (除了 SpecStory 還在持續寫入). 三個 commit 在這個 branch 的 stack：
+
+```
+2f8728c Notify: Discord auto-detect + reframe webhook target as user-supplied  ← just now
+374c09d Notify: merge apprise into canonical docker-compose; e2e smoke tester
+3a36cad Settings + notifications: bio, password, apprise webhooks, article reply
+```
+
+Apprise 容器也收掉了。要實際試 Discord，下一步就是去 Discord channel settings → Integrations → New Webhook，把 URL 貼進 BBS 個人設定就會跑。
+
+---
+
+_**User (2026-05-06 12:04:29Z)**_
+
+可以在 [Image #2] 通知設定那邊增加一個測試按鈕？能夠發測試message之類的 方便user測試
+
+_**User (2026-05-06 12:04:29Z)**_
+
+[Image: source: /Users/daviddwlee84/.claude/image-cache/ec92559f-42e3-4bdd-86d0-236d94435127/2.png]
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:28Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:32Z)**_
+
+可以。設計是：
+
+- 鍵位 `T`（大寫，避免跟 `t 啟停` 衝突），在 cursor 停在 target 行時發測試
+- 走獨立 path：`notify.Manager.SendTest()` — 同步、繞過 prefs、繞過 queue，直接編碼+POST，把 HTTP 結果（200 / 4xx / 網路錯誤）拿回來顯示在底部 flash
+- 跑在 goroutine 裡（HTTP 5s timeout），用 `tea.Cmd` 回 result msg，UI 不卡死
+
+先看 dispatcher 加 SendTest，然後 screen 加按鍵 + 結果處理：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:35Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:41Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:45Z)**_
+
+Now wire `T` into the settings screen + handle the async result:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:50Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:53Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:05:57Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:07Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:09Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:13Z)**_
+
+Update help.go entry + add tests for `T`:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:18Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/help.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:23Z)**_
+
+Add tests — both unit (SendTest with httptest) and screen-level (T key fires + handles result):
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:37Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher_test.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:54Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings_test.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:06:55Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings_test.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:07:00Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:08:00Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run affected tests with race detector
+
+`go test -race -count=1 ./internal/notify/... ./internal/tui/... 2>&1 | tail -10`
+
+```text
+ok  	github.com/daviddwlee84/sshbbs/internal/notify	2.464s
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	56.674s
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:08:03Z)**_
+
+All passing. Quick build + smoke confirmation, then summary:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:08:06Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Final build + vet
+
+`go build ./... && go vet ./... && echo OK`
+
+```text
+OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:08:26Z)**_
+
+做好了。實際 UX：
+
+**鍵位 `T`** — cursor 在 target 行時觸發。鍵位設計：
+
+| 鍵 | 動作 | 為何這樣分 |
+|----|------|-----------|
+| `t` (小寫) | 啟用/停用 target | 已存在 |
+| `T` (大寫) | 發測試通知 | 不會衝到 `t`，跟其他 BBS 螢幕的「destructive/explicit」大寫慣例一致 (e.g. `D` 刪除) |
+
+**Flow**：
+1. cursor 移到 `▸ #1 [✓] Test  https://discord.com/api/webhooks/...`
+2. 按 `T` → 底部立刻顯示 `🔔 testing target #1…`（同步 UI feedback）
+3. 背景 goroutine 跑 SendTest（HTTP 8s timeout），不卡 UI — 期間還能 j/k/Esc
+4. 結果回來 → flash 變成 `✓ target #1 test delivered — check your receiver`，或 err 顯示 `target #1 test failed: HTTP 400: {"message":"..."}`
+
+**測試訊息內容**（對 receiver 看到的）：
+
+```
+Title: [BBS-test] notification target verified
+Body:
+  User: alice
+  Target: #1 (Test)
+  Time: 2026-05-06 17:42:33
+  
+  If you can read this, the webhook URL is wired up correctly.
+```
+
+Discord webhook URL 會自動走 embed envelope，ntfy/apprise URL 走 `{title, body}`，跟正式事件一樣的 encoder path。
+
+**重要：SendTest 繞過 prefs**。 user 可以把所有勾勾關掉、純粹只測 URL 是否打通，不會因為「prefs 都 off → no-op」而誤以為 URL 壞掉。
+
+**測試 (4 個新測試)**：
+- `SendTest_Success`: 200 → nil error
+- `SendTest_4xxReturnsError`: 400 + body excerpt 進錯誤訊息（這樣 Discord/Slack 抱怨什麼 user 看得到）
+- `SendTest_BypassesPrefsAndQueue`: prefs 全 off 仍照打
+- `TKeyTestsTarget`: 整個 TUI flow（按 T → cmd → result msg → flash 更新）
+- `TKeyOnNonTargetRowIsNoop`: cursor 在 toggle 行按 T 不會誤觸
+
+要 commit 嗎？
+
+---
+
+_**User (2026-05-06 12:10:38Z)**_
+
+好 commit
+
+[Image #3] 然後如果這種發不出去 可能是什麼情況 debug看看
+
+_**User (2026-05-06 12:10:38Z)**_
+
+[Image: source: /Users/daviddwlee84/.claude/image-cache/ec92559f-42e3-4bdd-86d0-236d94435127/3.png]
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 12:11:04Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:11:05Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check dirty state before commit
+
+`git status --short`
+
+```text
+ M .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+ M internal/notify/dispatcher.go
+ M internal/notify/dispatcher_test.go
+ M internal/tui/help.go
+ M internal/tui/screen_notify_settings.go
+ M internal/tui/screen_notify_settings_test.go
+?? .specstory/history/2026-05-06_12-08-11Z-ui-hard-code-i18n.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:11:11Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage feature + agent artifacts, secret-scan
+
+`git add internal/notify/dispatcher.go internal/notify/dispatcher_test.go internal/tui/help.go internal/tui/screen_notify_settings.go internal/tui/screen_notify_settings_test.go && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/stage-agent-artifacts.sh && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/scan-staged.sh && echo SCAN-CLEAN`
+</details></tool-use>

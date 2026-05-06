@@ -164,6 +164,7 @@ var screenHelp = map[Screen][]helpSection{
 			{"a", "add new webhook target"},
 			{"e", "edit cursored target"},
 			{"t", "toggle cursored target enabled"},
+			{"T", "send test notification to cursored target"},
 			{"d", "delete cursored target"},
 			{"Esc/←/h", "back to user settings"},
 			{"Q", "back to main menu"},
