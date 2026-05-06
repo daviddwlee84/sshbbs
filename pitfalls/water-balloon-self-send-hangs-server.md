@@ -56,45 +56,53 @@ on program shutdown, which the user can't trigger from a frozen TUI.
 
 ## Workaround
 
-Block self-targeting at every site that calls `Broker.Send`:
+**Sidestep the broker call when target == self** instead of refusing the
+operation. The compose / thread / inbox stay usable as a self-memo
+feature (Slack/WeChat/Telegram precedent), and the deadlock can't fire
+because `Broker.Send` is never invoked with the caller's own UID:
 
 ```go
 // internal/tui/screen_wb.go — wbComposeModel.submit
+wb, err := m.deps.Store.WaterBalloons().Insert(ctx, from.ID, from.UserID, target.ID, body, false)
+if err != nil { ... }
 if target.ID == from.ID {
-    m.err = "cannot send to yourself"
-    return m, nil
-}
-
-// internal/tui/screen_wb.go — wbThreadModel.submit
-if m.cpID == from.ID {
-    m.err = "cannot send to yourself"
-    return m, nil
-}
-
-// internal/tui/screen_wb.go — newWBThreadModel
-if deps.User != nil && counterpartyID == deps.User.ID {
-    return wbThreadModel{
-        deps: deps, cpID: counterpartyID,
-        loadErr: errors.New("cannot open thread with yourself"),
-    }
+    // Self-WB (memo). Skip Broker.Send; mark read so it doesn't
+    // replay as a toast on next reconnect.
+    _ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID)
+} else if m.deps.Broker != nil {
+    delivered := m.deps.Broker.Send(target.ID, WBIncomingMsg{ID: wb.ID, ...})
+    if delivered { _ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID) }
 }
 ```
 
-Filter pre-existing self rows out of the inbox roll-up so users don't
-re-discover the trap by clicking on themselves:
-
-```sql
--- internal/store/waterballoons.go — ListCounterpartiesFor CTE
-agg AS (
-    SELECT cp_id, MAX(id) AS last_id, ...
-    FROM related
-    WHERE cp_id != ?           -- NEW: hide self-WBs
-    GROUP BY cp_id
-)
+```go
+// internal/tui/screen_wb.go — wbThreadModel.submit (Phase 2 DM input)
+// Same shape: Insert, then if cpID == from.ID skip broker + mark read,
+// else Broker.Send + maybe-mark-read.
 ```
 
-Add a comment on `Broker.Send` documenting the invariant so the next
-caller doesn't reinvent the trap from a different screen.
+UI markers so users see they're in a self-conversation and don't mistake
+it for a generic chat:
+
+```go
+// inbox row
+if it.UserID == viewerID {
+    nameStr = "📝 yourself"
+}
+
+// thread header
+if m.cpID == m.deps.User.ID {
+    headerLabel = "📝 yourself (memo)"
+}
+```
+
+`ListCounterpartiesFor` does NOT filter self-rows — they appear in the
+inbox as a regular counterparty so the memo feature is discoverable.
+
+A `Broker.Send` doc comment names the invariant ("don't call with toUID
+== caller's own UserID inside an Update path") so a future feature
+that genuinely targets self gets the warning and follows the
+skip-broker-call pattern rather than reinventing the deadlock.
 
 ## Detection
 

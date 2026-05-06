@@ -281,71 +281,82 @@ func TestWBThread_TypingForwardsToInput(t *testing.T) {
 	}
 }
 
-// TestWBThread_RefusesSelfThread guards against the bubbletea-msgs-channel
-// deadlock: opening a thread with yourself and pressing Enter would call
-// Broker.Send → unbuffered chan from inside your own Update loop. The
-// constructor blocks the trap by setting loadErr; the inbox already filters
-// self-WBs, so this code path should be unreachable from the UI but we
-// belt-and-brace because navigate is the only thing between a stray
-// CounterpartyUserID and the deadlock.
-func TestWBThread_RefusesSelfThread(t *testing.T) {
+// TestWBThread_AllowsSelfThread confirms self-threads open normally and
+// the header surfaces a "yourself / memo" marker so users see they're in
+// a self-conversation, not a generic chat. The bubbletea-deadlock concern
+// is sidestepped at submit time (skip Broker.Send when cpID == User.ID),
+// not by refusing construction.
+func TestWBThread_AllowsSelfThread(t *testing.T) {
 	deps, _, bob := wbFixture(t, 0)
 	m := newWBThreadModel(deps, bob.ID) // bob is deps.User
-	if m.loadErr == nil {
-		t.Fatal("expected loadErr for self-thread")
+	if m.loadErr != nil {
+		t.Fatalf("self-thread should open, got loadErr=%v", m.loadErr)
 	}
-	if !strings.Contains(m.loadErr.Error(), "yourself") {
-		t.Errorf("loadErr = %v, want one mentioning 'yourself'", m.loadErr)
+	if m.cpID != bob.ID {
+		t.Errorf("cpID = %d, want %d", m.cpID, bob.ID)
+	}
+	v := m.View()
+	if !strings.Contains(v, "yourself") {
+		t.Errorf("self-thread View missing 'yourself' marker; got:\n%s", v)
 	}
 }
 
-// TestWBThread_SubmitGuardsAgainstSelf is the defensive layer: even if
-// somehow a wbThreadModel got constructed with cpID == User.ID, submit
-// must refuse rather than deadlock. Construct manually to bypass the
-// constructor guard.
-func TestWBThread_SubmitGuardsAgainstSelf(t *testing.T) {
+// TestWBThread_SelfSubmitSkipsBroker is the load-bearing test: a self-DM
+// must Insert into the DB and append locally WITHOUT calling Broker.Send
+// (that's the deadlock — see pitfall doc). We can't easily assert "broker
+// not called" with the real broker, but we can prove the row is persisted
+// AND already marked read (which the non-self path only does after a
+// successful broker.Send returns delivered=true).
+func TestWBThread_SelfSubmitSkipsBroker(t *testing.T) {
 	deps, _, bob := wbFixture(t, 0)
-	m := wbThreadModel{
-		deps:     deps,
-		cpID:     bob.ID, // self
-		cpUserID: "bob",
-	}
-	m.input.SetValue("hi me")
+	m := newWBThreadModel(deps, bob.ID) // self
+	m.input.SetValue("buy milk")
 	updated, _ := m.submit()
 	tm := updated.(wbThreadModel)
-	if tm.err == "" {
-		t.Error("submit to self did not set err")
+
+	if len(tm.items) != 1 {
+		t.Fatalf("self-submit appended %d items, want 1", len(tm.items))
 	}
-	if len(tm.items) != 0 {
-		t.Errorf("self-submit appended %d items, want 0", len(tm.items))
+	if tm.items[0].Body != "buy milk" {
+		t.Errorf("body = %q, want %q", tm.items[0].Body, "buy milk")
+	}
+	got, _ := deps.Store.WaterBalloons().GetByID(t.Context(), tm.items[0].ID)
+	if got == nil || got.FromUserID != bob.ID || got.ToUserID != bob.ID {
+		t.Errorf("DB row mis-shaped for self-WB: %+v", got)
+	}
+	if !got.ReadAt.Valid {
+		t.Error("self-WB not marked read on insert — would replay as toast on reconnect")
 	}
 }
 
 // =====================================================================
-// Compose self-send guard
+// Compose self-send (memo)
 // =====================================================================
 
-// TestWBCompose_BlocksSelfSend reproduces the original hang report: when
-// alice types her own userid as recipient and presses Ctrl+S, submit must
-// refuse with an inline error rather than calling Insert + Broker.Send
-// (which would deadlock the unbuffered bubbletea msgs channel).
-func TestWBCompose_BlocksSelfSend(t *testing.T) {
-	deps, _, _ := wbFixture(t, 0)
+// TestWBCompose_AllowsSelfMemo: self-recipient succeeds, persists, and
+// auto-marks-read so it doesn't replay on reconnect. The guard against
+// the original hang is now "skip Broker.Send when target==self" rather
+// than "refuse the operation". (Pre-fix this test would have deadlocked
+// the goroutine running it; the fix is verified by the test completing.)
+func TestWBCompose_AllowsSelfMemo(t *testing.T) {
+	deps, _, bob := wbFixture(t, 0)
 	m := newWBComposeModel(deps, "")
-	m.to.SetValue("bob") // wbFixture's deps.User is bob
-	m.body.SetValue("hi me")
+	m.to.SetValue("bob") // bob is deps.User
+	m.body.SetValue("remember the milk")
 	updated, _ := m.submit()
 	cm := updated.(wbComposeModel)
-	if cm.err == "" {
-		t.Fatal("self-send produced no error message")
+	if cm.err != "" {
+		t.Fatalf("self-memo errored: %q", cm.err)
 	}
-	if !strings.Contains(cm.err, "yourself") {
-		t.Errorf("err = %q, want one mentioning 'yourself'", cm.err)
+	if cm.sent != "bob" {
+		t.Errorf("sent = %q, want bob", cm.sent)
 	}
-	// And no row was written.
-	rows, _ := deps.Store.WaterBalloons().ListConversation(t.Context(), deps.User.ID, deps.User.ID, 10)
-	if len(rows) != 0 {
-		t.Errorf("self-send produced %d DB rows, want 0", len(rows))
+	rows, _ := deps.Store.WaterBalloons().ListConversation(t.Context(), bob.ID, bob.ID, 10)
+	if len(rows) != 1 {
+		t.Fatalf("got %d self-WB rows, want 1", len(rows))
+	}
+	if !rows[0].ReadAt.Valid {
+		t.Error("self-memo not marked read on insert — would replay as toast on reconnect")
 	}
 }
 

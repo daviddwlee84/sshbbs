@@ -99,18 +99,28 @@ func (m wbInboxModel) View() string {
 	)
 	b.WriteString(StyleDim.Render(header) + "\n")
 
+	viewerID := int64(0)
+	if m.deps.User != nil {
+		viewerID = m.deps.User.ID
+	}
 	for i, it := range m.items {
 		status := "·"
 		if it.UnreadCount > 0 {
 			status = fmt.Sprintf("%d", it.UnreadCount)
 		}
+		nameStr := it.UserIDStr
 		preview := it.LastBody
-		if it.LastFromMe {
+		if it.UserID == viewerID {
+			// Self-thread shows as "📝 yourself"; the preview drops the
+			// redundant "you:" prefix since both sender and recipient
+			// are the viewer.
+			nameStr = "📝 yourself"
+		} else if it.LastFromMe {
 			preview = "you: " + preview
 		}
 		row := fmt.Sprintf(" %s  %s  %s  %s",
 			PadRight(it.LastAt.Format("2006-01-02 15:04"), dateW),
-			PadRight(it.UserIDStr, nameW),
+			PadRight(nameStr, nameW),
 			PadRight(status, statusW),
 			Truncate(preview, previewW),
 		)
@@ -244,26 +254,21 @@ func (m wbComposeModel) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	from := m.deps.User
-	if target.ID == from.ID {
-		// Self-targeting would deadlock the SSH session: Broker.Send
-		// pushes to bubbletea's unbuffered msgs channel, but the program
-		// loop is blocked here in Update, so the push waits forever.
-		// (see pitfalls/water-balloon-self-send-hangs-server.md)
-		m.err = "cannot send to yourself"
-		return m, nil
-	}
 
-	delivered := false
-	if m.deps.Broker != nil {
-		// Persist first, then notify with the canonical row's ID.
-	}
 	wb, err := m.deps.Store.WaterBalloons().Insert(ctx, from.ID, from.UserID, target.ID, body, false)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	if m.deps.Broker != nil {
-		delivered = m.deps.Broker.Send(target.ID, WBIncomingMsg{
+	if target.ID == from.ID {
+		// Self-WB (memo). Broker.Send to the caller's own session would
+		// deadlock the unbuffered bubbletea msgs channel — see
+		// pitfalls/water-balloon-self-send-hangs-server.md. Skip the
+		// notification (you typed it, you saw it) and mark read so the
+		// row doesn't replay as a toast on next reconnect.
+		_ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID)
+	} else if m.deps.Broker != nil {
+		delivered := m.deps.Broker.Send(target.ID, WBIncomingMsg{
 			ID:         wb.ID,
 			FromUserID: from.UserID,
 			Body:       body,
@@ -327,18 +332,6 @@ type wbThreadModel struct {
 
 func newWBThreadModel(deps Deps, counterpartyID int64) wbThreadModel {
 	ctx := context.Background()
-	if deps.User != nil && counterpartyID == deps.User.ID {
-		// Refuse to construct a self-thread. Sending in here would
-		// deadlock via Broker.Send → unbuffered msgs channel; just
-		// surfacing loadErr keeps the user out of the trap and matches
-		// the compose-side guard. See
-		// pitfalls/water-balloon-self-send-hangs-server.md.
-		return wbThreadModel{
-			deps:    deps,
-			cpID:    counterpartyID,
-			loadErr: errors.New("cannot open thread with yourself"),
-		}
-	}
 	cp, err := deps.Store.Users().GetByID(ctx, counterpartyID)
 	if err != nil {
 		return wbThreadModel{deps: deps, cpID: counterpartyID, loadErr: err}
@@ -478,20 +471,18 @@ func (m wbThreadModel) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	from := m.deps.User
-	if m.cpID == from.ID {
-		// Defensive: newWBThreadModel already refuses self-threads, so
-		// this should be unreachable. Belt-and-braces — see compose-side
-		// guard for the deadlock explanation.
-		m.err = "cannot send to yourself"
-		return m, nil
-	}
 	ctx := context.Background()
 	wb, err := m.deps.Store.WaterBalloons().Insert(ctx, from.ID, from.UserID, m.cpID, body, false)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	if m.deps.Broker != nil {
+	if m.cpID == from.ID {
+		// Self-thread / memo: skip Broker.Send (would deadlock the
+		// unbuffered msgs channel), mark read immediately. See
+		// pitfalls/water-balloon-self-send-hangs-server.md.
+		_ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID)
+	} else if m.deps.Broker != nil {
 		delivered := m.deps.Broker.Send(m.cpID, WBIncomingMsg{
 			ID:         wb.ID,
 			FromUserID: from.UserID,
@@ -510,7 +501,11 @@ func (m wbThreadModel) submit() (tea.Model, tea.Cmd) {
 func (m wbThreadModel) View() string {
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 對話 with %s ", m.cpUserID)))
+	headerLabel := m.cpUserID
+	if m.deps.User != nil && m.cpID == m.deps.User.ID {
+		headerLabel = "📝 yourself (memo)"
+	}
+	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 對話 with %s ", headerLabel)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {

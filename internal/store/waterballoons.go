@@ -207,7 +207,6 @@ func (r *WaterBalloonRepo) ListCounterpartiesFor(ctx context.Context, viewerID i
 			       MAX(id) AS last_id,
 			       SUM(CASE WHEN to_user_id = ? AND read_at IS NULL THEN 1 ELSE 0 END) AS unread_count
 			FROM related
-			WHERE cp_id != ? -- hide self-WBs (self-thread would deadlock anyway)
 			GROUP BY cp_id
 		)
 		SELECT a.cp_id, u.user_id, r.body, (r.from_user_id = ?), r.created_at, a.unread_count
@@ -217,7 +216,7 @@ func (r *WaterBalloonRepo) ListCounterpartiesFor(ctx context.Context, viewerID i
 		ORDER BY (a.unread_count > 0) DESC, r.created_at DESC
 		LIMIT ?`
 	rows, err := r.s.db.QueryContext(ctx, q,
-		viewerID, viewerID, viewerID, viewerID, viewerID, viewerID, limit,
+		viewerID, viewerID, viewerID, viewerID, viewerID, limit,
 	)
 	if err != nil {
 		return nil, err
