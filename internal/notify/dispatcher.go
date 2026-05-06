@@ -11,9 +11,7 @@
 package notify
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -171,27 +169,17 @@ func (m *Manager) deliver(ctx context.Context, ev Event) {
 		log.Warn("notify: load targets", "to", ev.ToUserID, "err", err)
 		return
 	}
-	if len(targets) == 0 {
-		return
-	}
-	body, err := json.Marshal(payload{Title: ev.Title, Body: ev.Body})
-	if err != nil {
-		log.Warn("notify: marshal", "err", err)
-		return
-	}
 	for _, t := range targets {
-		m.post(ctx, t, body, ev)
+		m.post(ctx, t, ev)
 	}
 }
 
-func (m *Manager) post(ctx context.Context, t *store.NotifyTarget, body []byte, ev Event) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.URL, bytes.NewReader(body))
+func (m *Manager) post(ctx context.Context, t *store.NotifyTarget, ev Event) {
+	req, err := buildRequest(ctx, t, ev)
 	if err != nil {
 		log.Warn("notify: build request", "target", t.ID, "err", err)
 		return
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "sshbbs-notify/1")
 	resp, err := m.client.Do(req)
 	if err != nil {
 		log.Warn("notify: post failed",

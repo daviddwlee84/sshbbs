@@ -22,9 +22,11 @@ Implements the MUST-HAVE feature set of the planning doc:
 - 水球 (water balloons) — private one-line messages with offline persistence
   and on-reconnect replay
 - 個人設定: change password, edit bio, configure per-event webhook
-  notifications (push / wb / mail / reply) — see
-  [`docs/notifications.md`](docs/notifications.md) for the recommended
-  caronc/apprise-api docker-compose recipe
+  notifications (push / wb / mail / reply). Each user picks any
+  HTTPS URL — Discord webhook, ntfy.sh topic, self-hosted apprise-api,
+  Slack, custom — and the BBS auto-detects Discord URLs to use the
+  embed payload format. See [`docs/notifications.md`](docs/notifications.md)
+  for the per-target walkthroughs and the operator threat model
 
 ## Quickstart
 

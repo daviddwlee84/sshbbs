@@ -12,11 +12,22 @@ services:
           chmod 600 /keys/host_ed25519
         fi
   apprise:
-    # Webhook fan-out for per-user notifications (push / wb / mail / Re:).
-    # BBS reaches it via the docker DNS name "apprise" inside the compose
-    # network; from the host it's http://localhost:8000. See
-    # docs/notifications.md for the per-user setup walkthrough.
+    # Optional: bundled apprise-api for demo / single-user / homelab use.
+    # NOT started by default — the BBS notify dispatcher just POSTs JSON to
+    # whatever URL each user configures (Discord webhook, ntfy.sh, their
+    # own apprise instance, anything HTTP). This bundled service exists
+    # for convenience when you want apprise:// URL fan-out without
+    # setting up a separate host.
+    #
+    # The admin REST API on :8000 has no authentication, so do NOT expose
+    # this profile on a multi-tenant BBS — any user with network access
+    # to :8000 can read/edit/delete every other user's keys. See
+    # docs/notifications.md ("BBS operator's view") for the threat model.
+    #
+    # Bring it up explicitly when wanted:
+    #   docker compose --profile demo up -d
     image: caronc/apprise:latest
+    profiles: ["demo"]
     ports:
       - "8000:8000"
     volumes:
@@ -30,8 +41,6 @@ services:
     depends_on:
       hostkey-init:
         condition: service_completed_successfully
-      apprise:
-        condition: service_started
     ports:
       - "2222:2222"
     volumes:

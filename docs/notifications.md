@@ -1,6 +1,8 @@
 # Notifications
 
-The BBS fans out per-user webhook notifications for four event kinds:
+Per-user webhook fan-out for four event kinds. Each user opts in via
+**主選單 → 個人設定 → 通知設定** and configures one or more URLs that
+receive the notifications.
 
 | Kind     | Fires when                                                  | Self-event filtered? |
 |----------|-------------------------------------------------------------|----------------------|
@@ -9,16 +11,222 @@ The BBS fans out per-user webhook notifications for four event kinds:
 | `mail`   | someone sends me a 站內信                                   | yes (memo path)      |
 | `reply`  | someone posts a `Re:` reply to one of my articles           | yes                  |
 
-Each user opts in per-event in 主選單 → 個人設定 → 通知設定, and adds
-one or more webhook URLs that receive `application/json` POSTs of:
+There is also an "only when offline" toggle: when on, the dispatcher
+checks `chat.Broker.IsOnline(uid)` and skips delivery if the user has at
+least one live SSH session.
 
-```json
-{"title": "[BBS] alice 推了你的文章", "body": "Hello world\n\n→ 推 cool"}
+## How it works
+
+The BBS POSTs JSON to whatever URL each user configures. The exact JSON
+shape depends on the URL — the dispatcher picks an encoder by URL prefix:
+
+- **Discord webhook URL** (`https://discord.com/api/webhooks/...`,
+  including `discordapp.com` / `canary` / `ptb` variants) → embed-wrapped
+  payload that Discord renders as a structured message:
+
+    ```json
+    {
+      "username": "SSH-BBS",
+      "embeds": [{"title": "...", "description": "...", "color": 10317823}]
+    }
+    ```
+
+- **Anything else** → flat `{title, body}` apprise-style JSON:
+
+    ```json
+    {"title": "[BBS] alice 推了你的文章", "body": "→ 推 nice post"}
+    ```
+
+  This shape is what `caronc/apprise-api`'s `/notify/<key>` endpoint
+  expects. ntfy.sh, custom webhook receivers, and most generic
+  integrations also handle it cleanly.
+
+Adding a new direct integration (Slack incoming webhooks, Telegram bot
+HTTP, …) means adding one URL pattern + one encoder in
+`internal/notify/encoder.go` — no schema or UI change.
+
+## Picking a target
+
+Most BBS users want one of these. Pick the easiest one that hits a
+device you already carry.
+
+| Want                                          | Use                                                         | ~setup time |
+|-----------------------------------------------|-------------------------------------------------------------|-------------|
+| Discord channel ping                          | Discord channel webhook URL — paste it directly             | 30 s        |
+| Push notification on my phone                 | ntfy.sh topic URL (free public, or self-host)               | 1 min       |
+| Multiple services fan-out (Discord + email + ...) | Self-hosted apprise-api on a machine you control            | 5 min       |
+| Internal Slack channel                        | Slack incoming webhook URL — POSTs `{title, body}` as text  | 2 min       |
+| Custom logic (filter, templating, archive)    | Your own n8n / Zapier / IFTTT / handcrafted endpoint        | varies      |
+
+Whatever you pick: the only thing the BBS needs is **an HTTP(S) URL it
+can POST to**. The user (you) own the credential / API key embedded in
+that URL, and the BBS operator can see it (see "Operator's view" below).
+
+### Walkthrough A: Discord webhook (direct)
+
+1. In Discord: server settings → **Integrations** → **Webhooks** →
+   **New Webhook** → pick the channel → **Copy Webhook URL**.
+   The URL looks like `https://discord.com/api/webhooks/<id>/<token>`.
+2. SSH into the BBS, **主選單 → 個人設定 → 通知設定 → `a` 新增 target**:
+   - **Label**: `discord` (just for your bookkeeping)
+   - **URL**: paste the Discord webhook URL verbatim
+3. Tick the events you want (推/噓 / 水球 / 信箱 / Re:), `Ctrl+S` to save.
+4. Have a friend push your article (or send yourself mail from a second
+   account) → expect the embed-wrapped notification in Discord within
+   a second or two.
+
+The BBS automatically detects the Discord URL prefix and switches to
+the embed envelope — no flag, no format selector.
+
+### Walkthrough B: ntfy.sh (push notification on phone)
+
+1. Install the [ntfy app](https://ntfy.sh/) on iOS / Android, or use
+   the web UI.
+2. Subscribe to a topic — pick something unguessable, e.g.
+   `bbs-alice-7f3a91`. Topic names are public-by-design, so anyone who
+   guesses yours can read it. Use a long random suffix.
+3. Add target in BBS:
+   - **URL**: `https://ntfy.sh/bbs-alice-7f3a91`
+4. ntfy renders the `{title, body}` JSON as a notification with the
+   title as the heading and body as the message text.
+
+For self-hosted ntfy with auth, use
+`https://<user>:<password>@ntfy.example.com/<topic>`.
+
+### Walkthrough C: Self-hosted apprise-api (multi-service fan-out)
+
+If you want one webhook hit to fan out to Discord + Telegram + email
++ SMS, run [`caronc/apprise-api`](https://github.com/caronc/apprise-api)
+on a machine you control (NAS, VPS, homelab). The repo's bundled
+demo profile is one option (see "Demo profile" below); production
+deployments should run their own.
+
+1. On your machine: `docker run -d -p 8000:8000 -v ./config:/config caronc/apprise:latest`
+2. Register your apprise:// URLs under a key:
+
+    ```bash
+    curl -X POST http://your-host:8000/add/mykey \
+      -H 'Content-Type: application/json' \
+      -d '{"urls":"discord://<id>/<token>,tgram://<bot>/<chat>,mailto://user:pass@gmail.com"}'
+    ```
+
+3. Add target in BBS:
+   - **URL**: `http://your-host:8000/notify/mykey`
+4. Apprise translates `{title, body}` into each service's native format.
+
+The full apprise:// URL catalog (Slack, Telegram, ntfy.sh, SMTP,
+Pushover, 100+ more) is at <https://github.com/caronc/apprise/wiki>.
+
+## BBS-side configuration (same for every target type)
+
+Inside 通知設定:
+
+- **Toggle list (top half)**: Space flips a row. Ctrl+S persists. The
+  five rows: 推/噓 / 水球 / 信箱 / Re: 回文 / 僅在離線時通知.
+- **Target list (bottom half)**: each row is one URL.
+  - `a` add (inline form)
+  - `e` edit (URL or label)
+  - `t` toggle enabled (preserves the row, just stops sending)
+  - `d` delete
+- **URL hostname cheat sheet** (only matters for the bundled demo
+  apprise instance — direct webhooks like Discord don't have this
+  problem since they're public URLs):
+
+    | BBS runs in…              | Demo apprise URL                                  |
+    |---------------------------|---------------------------------------------------|
+    | docker compose with `--profile demo` | `http://apprise:8000/notify/<key>`     |
+    | host (`make run`)         | `http://localhost:8000/notify/<key>`              |
+    | different host / network  | `http://<apprise-host>:8000/notify/<key>`         |
+
+## Demo profile: bundled apprise-api
+
+The repo's [`docker-compose.yml`](../docker-compose.yml) ships a
+`caronc/apprise-api` service under the `demo` profile. **It is not
+started by default.** Use it for:
+
+- single-user homelab deployments (you = operator = only user)
+- local development
+- demos / smoke testing — see [`cmd/bbsmoke`](../cmd/bbsmoke/main.go)
+  for the end-to-end harness this PR was developed against
+
+```bash
+docker compose --profile demo up -d   # brings up apprise + sshbbs + hostkey-init
+make compose-down                     # stops everything
 ```
 
-There is also an "only when offline" toggle: when on, the dispatcher
-checks `chat.Broker.IsOnline(uid)` and skips delivery if the recipient
-has at least one live SSH session.
+**Do not use the bundled apprise on a multi-tenant BBS.** Reasons in
+"Operator's view" below — the short version is its admin REST API on
+:8000 has no authentication, so any user with network reachability can
+read or delete every other user's keys. Production multi-user
+deployments should either (a) point each user at their own apprise
+instance, (b) point each user at a direct webhook (Discord/ntfy/etc.),
+or (c) run apprise-api with its own authentication proxy in front.
+
+## Operator's view (privacy / threat model)
+
+What the BBS operator can see:
+
+- **The target URL each user added.** This URL itself is the
+  credential — a Discord webhook URL grants send-as-this-channel; an
+  apprise-api URL exposes the apprise key. Treat `data/bbs.db` as
+  containing user secrets. Backup / RBAC / encryption-at-rest decisions
+  should match.
+- **Every notification's title and body excerpt** that left the BBS,
+  via debug logs (`charmbracelet/log` at warn-or-above by default;
+  bump to debug only when investigating).
+
+What the operator does **not** see:
+
+- The downstream service credentials (Discord token / Telegram bot
+  token / SMTP password) — those live wherever the user pointed the
+  webhook URL, never on the BBS.
+
+What users should know:
+
+- Notification body excerpts up to ~280 characters of mail body / push
+  comment. If you don't want even that on the receiving service, route
+  through self-hosted apprise-api configured to drop body and only
+  forward titles.
+- Webhook URLs can be revoked (regenerated in Discord / rotated in
+  apprise) at any time; the BBS will start logging `notify: target
+  rejected` 4xx until the user updates the URL in 通知設定.
+
+## Payload schema reference
+
+### Default ({title, body} for apprise-api / ntfy / generic)
+
+```json
+{"title": "[BBS] bob 推了你的文章 «Hello»", "body": "→ 推 nice post"}
+```
+
+Headers: `Content-Type: application/json`, `User-Agent: sshbbs-notify/1`.
+
+### Discord embed (when URL prefix matches `discord.com/api/webhooks/`)
+
+```json
+{
+  "username": "SSH-BBS",
+  "embeds": [{
+    "title": "[BBS] bob 推了你的文章 «Hello»",
+    "description": "→ 推 nice post",
+    "color": 10317823
+  }]
+}
+```
+
+Limits: title ≤ 256 runes, description ≤ 4096 runes — both truncated
+with `…` rather than byte-cut, so CJK glyphs aren't corrupted.
+
+## Troubleshooting
+
+| Symptom                                | Where to look                                                   |
+|----------------------------------------|------------------------------------------------------------------|
+| No notification fires at all           | Confirm the row in `user_notif_targets` exists and `enabled = 1`; confirm the matching pref toggle is on in 通知設定. |
+| BBS log says `notify: target rejected` (4xx) | Webhook returned an error. `curl -v` the same URL with the same JSON to see the receiver's complaint. Common Discord 400: payload didn't match the embed schema (auto-detect should prevent this — file a bug if you see it). |
+| BBS log says `notify: post failed`     | Network error / DNS / TLS. From the BBS host: `curl -v <target-url>` with a sample payload. |
+| Discord receives nothing but apprise-style URL works | URL probably doesn't match the auto-detect prefix. Confirm it starts with `https://discord.com/api/webhooks/` — variants like `discordapp.com` are also detected, but a CDN proxy in front of Discord might break detection. |
+| Notification fires while user is online | `only_when_offline` is unchecked. Tick it in 通知設定. |
+| Same event fires twice                 | Two enabled targets pointing at the same upstream. Check the target list. |
 
 ## Architecture decision: webhook indirection, not embedded library
 
@@ -29,146 +237,10 @@ We considered three architectures:
 2. **Shell out to `apprise` CLI** — works but adds an external binary
    dependency to the deployment story.
 3. **Generic webhook POST (chosen)** — the BBS speaks one protocol
-   (`POST` `{title, body}`), and any of the following work without code
-   changes:
-   - `caronc/apprise-api` (recommended for the full apprise:// surface)
-   - ntfy.sh, Discord webhooks, Slack webhooks
-   - any custom receiver
+   (HTTP POST JSON), and the URL prefix selects the encoder. Direct
+   integrations (Discord) get native payloads; everything else gets
+   the apprise-style envelope. No library lock-in, no required sidecar.
 
-This keeps the BBS dependency-light. Operators who want apprise://
-URL parsing run `caronc/apprise-api` as a sidecar; everyone else points
-the BBS at whatever webhook stack they already have.
-
-## Recommended deployment: bundled docker-compose
-
-`apprise` is already in the canonical [`docker-compose.yml`](../docker-compose.yml)
-alongside `sshbbs` and `hostkey-init`, so a single command brings up
-the full stack:
-
-```bash
-docker compose up -d        # builds sshbbs + pulls apprise + seeds host key
-# or, if you prefer the wrapper Make target:
-make compose-up
-```
-
-What you get:
-
-- `sshbbs` on `:2222` (SSH BBS)
-- `apprise` on `:8000` (caronc/apprise-api admin UI + REST endpoints)
-- Persistent named volumes: `bbs-data`, `bbs-keys`, `apprise-config`
-  — survive `docker compose down`, never lost across restarts.
-
-`make compose-down` stops both services; `make compose-down-volumes`
-also wipes the volumes (rare — only when you want a fresh DB and a
-fresh apprise config).
-
-## Where do I configure my webhook?
-
-Two pieces, every BBS user does both:
-
-### 1. Register your notification URL(s) in apprise-api
-
-Apprise-api keeps a key/value store of `<key> → [apprise:// URLs]`.
-Pick a unique key for yourself (e.g. `alice-discord`, your username
-plus the service name, anything unique within this apprise instance)
-and POST your apprise:// URL(s) under it:
-
-```bash
-curl -X POST http://localhost:8000/add/alice-discord \
-  -H 'Content-Type: application/json' \
-  -d '{"urls":"discord://webhook_id/webhook_token"}'
-```
-
-Multiple services under one key (one webhook hit fans out to all):
-
-```bash
-curl -X POST http://localhost:8000/add/alice-all \
-  -H 'Content-Type: application/json' \
-  -d '{"urls":"discord://...,tgram://bot_token/chat_id,mailto://user:pass@gmail.com"}'
-```
-
-Smoke test the apprise → service path before involving the BBS:
-
-```bash
-curl -X POST http://localhost:8000/notify/alice-discord \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"test","body":"hello from cli"}'
-```
-
-If your Discord channel pinged, the apprise leg is green and any BBS
-notification fired at this key will reach Discord.
-
-The full apprise:// URL catalog (Slack / Telegram / ntfy.sh / SMTP /
-Pushover / 100+ more) lives at
-<https://github.com/caronc/apprise/wiki>.
-
-> **Tip:** apprise-api also has a browser admin UI at
-> <http://localhost:8000>. You can register / inspect / delete keys
-> without curl if you prefer.
-
-### 2. Tell BBS where to POST
-
-SSH in (not `guest`), then **主選單 → 個人設定 → 通知設定**:
-
-1. Toggle which events you want delivered: 推/噓 / 水球 / 信箱 / Re:
-   回文 / 僅在離線時通知. Space flips, Ctrl+S saves.
-2. Press `a` to add a webhook target:
-   - **Label**: free-form, your bookkeeping (e.g. "discord").
-   - **URL**: `http://apprise:8000/notify/<your-key>` — the docker
-     service name `apprise` is what BBS resolves inside the compose
-     network. **Not** `localhost`: BBS itself is in a container, so
-     `localhost` would mean the BBS container, not the apprise one.
-3. Enter to save the target. Test by getting another user to push
-   your post (or send yourself mail from a second account).
-
-#### Hostname cheat sheet
-
-The URL you put in 通知設定 depends on where BBS is running:
-
-| BBS runs in…              | Apprise URL the BBS should POST to                |
-|---------------------------|----------------------------------------------------|
-| docker compose (default)  | `http://apprise:8000/notify/<key>`                 |
-| host (`make run`)         | `http://localhost:8000/notify/<key>`               |
-| different host / network  | `http://<apprise-host-ip-or-dns>:8000/notify/<key>`|
-
-`t` toggles a target enabled/disabled without losing the row, `e`
-edits in place, `d` deletes.
-
-## Payload schema
-
-The BBS sends exactly:
-
-```json
-{"title": "<one-line subject>", "body": "<short body or excerpt>"}
-```
-
-This matches `apprise-api`'s `/notify/<key>` contract directly. For
-non-apprise webhooks (ntfy.sh, Discord) the same shape works because
-those services accept arbitrary JSON and template against named fields.
-
-The `Content-Type: application/json` and `User-Agent: sshbbs-notify/1`
-headers are set on every request.
-
-## Troubleshooting
-
-| Symptom                                | Where to look                                                   |
-|----------------------------------------|------------------------------------------------------------------|
-| No notification fires at all           | `~/data/bbs.db` — confirm the row in `user_notif_targets` exists and `enabled = 1`; confirm prefs allow this kind in `user_notif_prefs`. |
-| BBS log says `notify: target rejected` | Webhook returned 4xx/5xx. `curl -v` the same URL with the same JSON to see what the receiver complained about. |
-| BBS log says `notify: post failed`     | Network error / DNS / TLS. `docker compose logs apprise` to see whether the sidecar is up. |
-| Got an apprise-api 200 but no message  | Apprise config key is empty / wrong service URL. `curl http://localhost:8000/get/<key>` lists the URLs the key currently maps to. |
-| Notification fires while user is online | `only_when_offline` is unchecked. Tick it in 通知設定. |
-| Same event fires twice                 | The user has two enabled targets pointing at the same upstream. Check the target list. |
-
-## Privacy / threat model
-
-- Webhook URLs leave your network with every notification. For sensitive
-  content (private boards, mail bodies), prefer **self-hosted** apprise-api
-  over public webhook services.
-- Webhook URLs are stored in plaintext in `data/bbs.db`. Treat that file
-  as a secret — it can also be used to send arbitrary messages on the
-  user's behalf if compromised.
-- The notification body excerpts up to ~280 characters of mail body /
-  push comment. If you don't want that on third-party servers, route
-  through self-hosted apprise-api configured to drop body and only
-  forward titles.
+The bundled `caronc/apprise-api` in the `demo` compose profile is a
+convenience for single-user homelab cases, not the recommended path
+for multi-user deployments.

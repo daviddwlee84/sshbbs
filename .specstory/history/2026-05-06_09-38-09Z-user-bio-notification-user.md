@@ -17707,11 +17707,1115 @@ _**Agent (claude-opus-4-7 2026-05-06 11:51:44Z)**_
 
 Now stage and commit. Use the agent-history-hygiene flow.
 
-_**Agent (claude-opus-4-7 2026-05-06 11:51:47Z)**_
+_**Agent (claude-opus-4-7 2026-05-06 11:51:48Z)**_
 
 <tool-use data-tool-type="shell" data-tool-name="Bash"><details>
 <summary>Tool use: **Bash**</summary>
 Stage feature files, agent artifacts, scan for secrets
 
 `git add docker-compose.yml docs/notifications.md cmd/bbsmoke/ && git rm docker-compose.example.yml && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/stage-agent-artifacts.sh && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/scan-staged.sh && echo SCAN-CLEAN`
+
+```text
+rm 'docker-compose.example.yml'
+staged: .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+1 artifact(s) would be staged.
+SCAN-CLEAN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:02Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit the apprise-as-default integration
+
+```bash
+git commit -m "$(cat <<'EOF'
+Notify: merge apprise into canonical docker-compose; e2e smoke tester
+
+The previous PR shipped a separate docker-compose.example.yml. That
+fragmented deployment (named volume vs bind mount, different service
+names) and didn't compose with the existing hostkey-init pattern.
+
+- docker-compose.yml: add apprise service + named volume apprise-config
+  alongside hostkey-init/sshbbs; sshbbs depends_on apprise. `make
+  compose-up` now brings up the full stack.
+- docker-compose.example.yml: removed (replaced by canonical).
+- docs/notifications.md: rewrite deployment + per-user setup chapters.
+  Lead with `docker compose up -d` instead of -f example.yml; add the
+  host-vs-container hostname cheat sheet (apprise:8000 inside docker,
+  localhost:8000 from host); show single-service and multi-service
+  fan-out curl examples; link the apprise:// URL catalog wiki.
+- cmd/bbsmoke: one-shot end-to-end smoke harness. Stands up a local
+  HTTP sink, opens a tmp store, dispatches a real push event through
+  notify.Manager, and asserts the sink received the apprise-wrapped
+  payload. Useful when bumping apprise versions or touching dispatcher
+  HTTP behaviour.
+
+Verified the full path BBS dispatcher → apprise sidecar → json:// sink
+under the canonical compose with cmd/bbsmoke; round-trip < 1s.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" 2>&1 | tail -15
+```
+
+```text
+[main 374c09d] Notify: merge apprise into canonical docker-compose; e2e smoke tester
+ 5 files changed, 1107 insertions(+), 88 deletions(-)
+ create mode 100644 cmd/bbsmoke/main.go
+ delete mode 100644 docker-compose.example.yml
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:21Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:21Z)**_
+
+提案實現開始。先 compose profile，然後重寫 docs framing。
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:32Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docker-compose.yml has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:36Z)**_
+
+Now read full notifications.md so I can do a clean reframe.
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:41Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./docs/notifications.md`
+
+```text
+1	# Notifications
+2	
+3	The BBS fans out per-user webhook notifications for four event kinds:
+4	
+5	| Kind     | Fires when                                                  | Self-event filtered? |
+6	|----------|-------------------------------------------------------------|----------------------|
+7	| `push`   | someone 推 / 噓 / → on one of my articles                   | yes                  |
+8	| `wb`     | someone sends me a 水球 (DM)                                | yes (memo path)      |
+9	| `mail`   | someone sends me a 站內信                                   | yes (memo path)      |
+10	| `reply`  | someone posts a `Re:` reply to one of my articles           | yes                  |
+11	
+12	Each user opts in per-event in 主選單 → 個人設定 → 通知設定, and adds
+13	one or more webhook URLs that receive `application/json` POSTs of:
+14	
+15	```json
+16	{"title": "[BBS] alice 推了你的文章", "body": "Hello world\n\n→ 推 cool"}
+17	```
+18	
+19	There is also an "only when offline" toggle: when on, the dispatcher
+20	checks `chat.Broker.IsOnline(uid)` and skips delivery if the recipient
+21	has at least one live SSH session.
+22	
+23	## Architecture decision: webhook indirection, not embedded library
+24	
+25	We considered three architectures:
+26	
+27	1. **Vendor `unraid/apprise-go`** — pure-Go, no Python, but in v0.1.x
+28	   alpha with no documented Go API. Locks the BBS to its release cadence.
+29	2. **Shell out to `apprise` CLI** — works but adds an external binary
+30	   dependency to the deployment story.
+31	3. **Generic webhook POST (chosen)** — the BBS speaks one protocol
+32	   (`POST` `{title, body}`), and any of the following work without code
+33	   changes:
+34	   - `caronc/apprise-api` (recommended for the full apprise:// surface)
+35	   - ntfy.sh, Discord webhooks, Slack webhooks
+36	   - any custom receiver
+37	
+38	This keeps the BBS dependency-light. Operators who want apprise://
+39	URL parsing run `caronc/apprise-api` as a sidecar; everyone else points
+40	the BBS at whatever webhook stack they already have.
+41	
+42	## Recommended deployment: bundled docker-compose
+43	
+44	`apprise` is already in the canonical [`docker-compose.yml`](../docker-compose.yml)
+45	alongside `sshbbs` and `hostkey-init`, so a single command brings up
+46	the full stack:
+47	
+48	```bash
+49	docker compose up -d        # builds sshbbs + pulls apprise + seeds host key
+50	# or, if you prefer the wrapper Make target:
+51	make compose-up
+52	```
+53	
+54	What you get:
+55	
+56	- `sshbbs` on `:2222` (SSH BBS)
+57	- `apprise` on `:8000` (caronc/apprise-api admin UI + REST endpoints)
+58	- Persistent named volumes: `bbs-data`, `bbs-keys`, `apprise-config`
+59	  — survive `docker compose down`, never lost across restarts.
+60	
+61	`make compose-down` stops both services; `make compose-down-volumes`
+62	also wipes the volumes (rare — only when you want a fresh DB and a
+63	fresh apprise config).
+64	
+65	## Where do I configure my webhook?
+66	
+67	Two pieces, every BBS user does both:
+68	
+69	### 1. Register your notification URL(s) in apprise-api
+70	
+71	Apprise-api keeps a key/value store of `<key> → [apprise:// URLs]`.
+72	Pick a unique key for yourself (e.g. `alice-discord`, your username
+73	plus the service name, anything unique within this apprise instance)
+74	and POST your apprise:// URL(s) under it:
+75	
+76	```bash
+77	curl -X POST http://localhost:8000/add/alice-discord \
+78	  -H 'Content-Type: application/json' \
+79	  -d '{"urls":"discord://webhook_id/webhook_token"}'
+80	```
+81	
+82	Multiple services under one key (one webhook hit fans out to all):
+83	
+84	```bash
+85	curl -X POST http://localhost:8000/add/alice-all \
+86	  -H 'Content-Type: application/json' \
+87	  -d '{"urls":"discord://...,tgram://bot_token/chat_id,mailto://user:pass@gmail.com"}'
+88	```
+89	
+90	Smoke test the apprise → service path before involving the BBS:
+91	
+92	```bash
+93	curl -X POST http://localhost:8000/notify/alice-discord \
+94	  -H 'Content-Type: application/json' \
+95	  -d '{"title":"test","body":"hello from cli"}'
+96	```
+97	
+98	If your Discord channel pinged, the apprise leg is green and any BBS
+99	notification fired at this key will reach Discord.
+100	
+101	The full apprise:// URL catalog (Slack / Telegram / ntfy.sh / SMTP /
+102	Pushover / 100+ more) lives at
+103	<https://github.com/caronc/apprise/wiki>.
+104	
+105	> **Tip:** apprise-api also has a browser admin UI at
+106	> <http://localhost:8000>. You can register / inspect / delete keys
+107	> without curl if you prefer.
+108	
+109	### 2. Tell BBS where to POST
+110	
+111	SSH in (not `guest`), then **主選單 → 個人設定 → 通知設定**:
+112	
+113	1. Toggle which events you want delivered: 推/噓 / 水球 / 信箱 / Re:
+114	   回文 / 僅在離線時通知. Space flips, Ctrl+S saves.
+115	2. Press `a` to add a webhook target:
+116	   - **Label**: free-form, your bookkeeping (e.g. "discord").
+117	   - **URL**: `http://apprise:8000/notify/<your-key>` — the docker
+118	     service name `apprise` is what BBS resolves inside the compose
+119	     network. **Not** `localhost`: BBS itself is in a container, so
+120	     `localhost` would mean the BBS container, not the apprise one.
+121	3. Enter to save the target. Test by getting another user to push
+122	   your post (or send yourself mail from a second account).
+123	
+124	#### Hostname cheat sheet
+125	
+126	The URL you put in 通知設定 depends on where BBS is running:
+127	
+128	| BBS runs in…              | Apprise URL the BBS should POST to                |
+129	|---------------------------|----------------------------------------------------|
+130	| docker compose (default)  | `http://apprise:8000/notify/<key>`                 |
+131	| host (`make run`)         | `http://localhost:8000/notify/<key>`               |
+132	| different host / network  | `http://<apprise-host-ip-or-dns>:8000/notify/<key>`|
+133	
+134	`t` toggles a target enabled/disabled without losing the row, `e`
+135	edits in place, `d` deletes.
+136	
+137	## Payload schema
+138	
+139	The BBS sends exactly:
+140	
+141	```json
+142	{"title": "<one-line subject>", "body": "<short body or excerpt>"}
+143	```
+144	
+145	This matches `apprise-api`'s `/notify/<key>` contract directly. For
+146	non-apprise webhooks (ntfy.sh, Discord) the same shape works because
+147	those services accept arbitrary JSON and template against named fields.
+148	
+149	The `Content-Type: application/json` and `User-Agent: sshbbs-notify/1`
+150	headers are set on every request.
+151	
+152	## Troubleshooting
+153	
+154	| Symptom                                | Where to look                                                   |
+155	|----------------------------------------|------------------------------------------------------------------|
+156	| No notification fires at all           | `~/data/bbs.db` — confirm the row in `user_notif_targets` exists and `enabled = 1`; confirm prefs allow this kind in `user_notif_prefs`. |
+157	| BBS log says `notify: target rejected` | Webhook returned 4xx/5xx. `curl -v` the same URL with the same JSON to see what the receiver complained about. |
+158	| BBS log says `notify: post failed`     | Network error / DNS / TLS. `docker compose logs apprise` to see whether the sidecar is up. |
+159	| Got an apprise-api 200 but no message  | Apprise config key is empty / wrong service URL. `curl http://localhost:8000/get/<key>` lists the URLs the key currently maps to. |
+160	| Notification fires while user is online | `only_when_offline` is unchecked. Tick it in 通知設定. |
+161	| Same event fires twice                 | The user has two enabled targets pointing at the same upstream. Check the target list. |
+162	
+163	## Privacy / threat model
+164	
+165	- Webhook URLs leave your network with every notification. For sensitive
+166	  content (private boards, mail bodies), prefer **self-hosted** apprise-api
+167	  over public webhook services.
+168	- Webhook URLs are stored in plaintext in `data/bbs.db`. Treat that file
+169	  as a secret — it can also be used to send arbitrary messages on the
+170	  user's behalf if compromised.
+171	- The notification body excerpts up to ~280 characters of mail body /
+172	  push comment. If you don't want that on third-party servers, route
+173	  through self-hosted apprise-api configured to drop body and only
+174	  forward titles.
+175
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:52:50Z)**_
+
+---
+
+_**User (2026-05-06 11:53:31Z)**_
+
+[Request interrupted by user]
+
+_**User (2026-05-06 11:54:59Z)**_
+
+continue 另外 假如user使用 https://discord.com/api/webhooks/... 能不能用一下對應的JSON格式傳？
+https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
+https://docs.discord.com/developers/resources/webhook
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:56:34Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:56:37Z)**_
+
+好，加上 Discord 對應格式的支援是必要的 — 直接 POST `{title, body}` 給 Discord webhook URL 會被回 400（Discord 要 `content` 或 `embeds`）。我用 URL pattern 自動切 encoder，user 只要貼 Discord webhook URL，BBS 自己換包格式。
+
+加上前一個 framing 提案，這次實現：
+
+1. compose: apprise → `demo` profile（已 done）
+2. notify dispatcher 抽 encoder 介面，加 Discord 格式
+3. URL auto-detect
+4. docs 重寫 framing
+5. README 改中性描述
+6. 測試
+
+開始：
+
+_**Agent (claude-opus-4-7 2026-05-06 11:56:59Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package notify
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+)
+
+// buildRequest constructs the HTTP request for a single (target, event)
+// pair. Format is inferred from the target URL — Discord webhook URLs
+// get the Discord embed envelope, everything else gets the generic
+// apprise-style {title, body} JSON. Adding a new direct integration
+// (Slack, Telegram bot HTTP, ...) means adding one URL pattern + one
+// encoder here, no schema or UI change required.
+func buildRequest(ctx context.Context, target *store.NotifyTarget, ev Event) (*http.Request, error) {
+	switch detectFormat(target.URL) {
+	case formatDiscord:
+		return buildDiscordRequest(ctx, target, ev)
+	default:
+		return buildAppriseRequest(ctx, target, ev)
+	}
+}
+
+type targetFormat int
+
+const (
+	formatApprise targetFormat = iota // {title, body} — apprise-api, ntfy.sh, generic
+	formatDiscord                     // embed-wrapped — direct Discord webhook URL
+)
+
+// detectFormat picks an encoder by URL prefix. Order: more specific patterns
+// first; the apprise default is the catch-all.
+func detectFormat(rawURL string) targetFormat {
+	u := strings.ToLower(rawURL)
+	switch {
+	case strings.HasPrefix(u, "https://discord.com/api/webhooks/"),
+		strings.HasPrefix(u, "https://discordapp.com/api/webhooks/"),
+		strings.HasPrefix(u, "https://canary.discord.com/api/webhooks/"),
+		strings.HasPrefix(u, "https://ptb.discord.com/api/webhooks/"):
+		return formatDiscord
+	}
+	return formatApprise
+}
+
+// buildAppriseRequest is the default encoder: a flat {title, body} JSON
+// document. caronc/apprise-api consumes this directly; ntfy.sh / Slack
+// incoming-webhook / generic receivers either accept it as-is or template
+// against the named fields.
+func buildAppriseRequest(ctx context.Context, target *store.NotifyTarget, ev Event) (*http.Request, error) {
+	body, err := json.Marshal(payload{Title: ev.Title, Body: ev.Body})
+	if err != nil {
+		return nil, fmt.Errorf("apprise marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.URL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "sshbbs-notify/1")
+	return req, nil
+}
+
+// Discord webhook envelope. Reference:
+// https://discord.com/developers/docs/resources/webhook#execute-webhook
+//
+// Discord rejects payloads with neither `content` nor `embeds` set, so we
+// always produce one embed with title + description. Field length limits
+// are 256 (title) / 4096 (description) — we truncate runes (CJK-safe), not
+// bytes.
+type discordPayload struct {
+	Username string         `json:"username,omitempty"`
+	Embeds   []discordEmbed `json:"embeds,omitempty"`
+}
+
+type discordEmbed struct {
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Color       int    `json:"color,omitempty"`
+}
+
+const (
+	discordTitleMax = 256
+	discordDescMax  = 4096
+	discordUsername = "SSH-BBS"
+	// Lipgloss-style accent purple, picked to match the BBS header style.
+	discordColor = 0x9D6FFF
+)
+
+func buildDiscordRequest(ctx context.Context, target *store.NotifyTarget, ev Event) (*http.Request, error) {
+	embed := discordEmbed{
+		Title:       truncateRunes(ev.Title, discordTitleMax),
+		Description: truncateRunes(ev.Body, discordDescMax),
+		Color:       discordColor,
+	}
+	// Discord rejects an empty embed (no title / description / fields).
+	// Should never happen given the BBS always sets a title, but guard
+	// anyway so a misuse fails loudly during dev rather than silently
+	// at delivery.
+	if embed.Title == "" && embed.Description == "" {
+		embed.Description = "(empty notification)"
+	}
+	p := discordPayload{
+		Username: discordUsername,
+		Embeds:   []discordEmbed{embed},
+	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("discord marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.URL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "sshbbs-notify/1")
+	return req, nil
+}
+
+// truncateRunes caps s to at most max runes. CJK-safe (counts glyphs, not
+// bytes). When trimming, replaces the tail with U+2026 HORIZONTAL ELLIPSIS
+// so receivers can tell content was cut.
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/encoder.go (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:03Z)**_
+
+Now refactor the dispatcher to use the encoder:
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:06Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:17Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:21Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:22Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Build check
+
+`go build ./... 2>&1 | head -10`
+
+```text
+(Bash completed with no output)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:26Z)**_
+
+Build clean. Now Discord encoder tests:
+
+_**Agent (claude-opus-4-7 2026-05-06 11:57:50Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+package notify
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/daviddwlee84/sshbbs/internal/store"
+)
+
+func TestDetectFormat(t *testing.T) {
+	cases := []struct {
+		url  string
+		want targetFormat
+	}{
+		{"https://discord.com/api/webhooks/123/abc", formatDiscord},
+		{"https://discordapp.com/api/webhooks/123/abc", formatDiscord},
+		{"https://canary.discord.com/api/webhooks/123/abc", formatDiscord},
+		{"https://ptb.discord.com/api/webhooks/123/abc", formatDiscord},
+		{"HTTPS://Discord.com/API/Webhooks/123/abc", formatDiscord}, // case-insensitive
+		{"https://apprise:8000/notify/mykey", formatApprise},
+		{"http://localhost:8000/notify/mykey", formatApprise},
+		{"https://ntfy.sh/my-topic", formatApprise},
+		{"https://hooks.slack.com/services/T/B/X", formatApprise}, // not yet wired
+		{"https://example.com/discord-fake/api/webhooks/", formatApprise}, // pattern is prefix-anchored
+	}
+	for _, tc := range cases {
+		t.Run(tc.url, func(t *testing.T) {
+			if got := detectFormat(tc.url); got != tc.want {
+				t.Errorf("detectFormat(%q) = %v, want %v", tc.url, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildDiscordRequest_PayloadShape(t *testing.T) {
+	target := &store.NotifyTarget{
+		ID:  1,
+		URL: "https://discord.com/api/webhooks/123/abc",
+	}
+	ev := Event{
+		Kind:     KindPush,
+		ToUserID: 42,
+		Title:    "[BBS] alice 推了你的文章 «Hello»",
+		Body:     "→ 推 nice post\n\nsecond line",
+	}
+	req, err := buildDiscordRequest(context.Background(), target, ev)
+	if err != nil {
+		t.Fatalf("buildDiscordRequest: %v", err)
+	}
+	if req.Method != "POST" {
+		t.Errorf("Method = %q, want POST", req.Method)
+	}
+	if got := req.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if !strings.Contains(req.URL.String(), "discord.com/api/webhooks") {
+		t.Errorf("URL = %q", req.URL.String())
+	}
+	body, _ := io.ReadAll(req.Body)
+
+	var got discordPayload
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, body)
+	}
+	if got.Username != discordUsername {
+		t.Errorf("username = %q, want %q", got.Username, discordUsername)
+	}
+	if len(got.Embeds) != 1 {
+		t.Fatalf("got %d embeds, want 1", len(got.Embeds))
+	}
+	em := got.Embeds[0]
+	if em.Title != ev.Title {
+		t.Errorf("embed title = %q, want %q", em.Title, ev.Title)
+	}
+	if em.Description != ev.Body {
+		t.Errorf("embed description = %q, want %q", em.Description, ev.Body)
+	}
+	if em.Color == 0 {
+		t.Errorf("embed color = 0, want non-zero accent")
+	}
+}
+
+func TestBuildDiscordRequest_TruncatesLongFields(t *testing.T) {
+	target := &store.NotifyTarget{URL: "https://discord.com/api/webhooks/x/y"}
+	// 300 CJK runes — well over the 256-rune title limit, well under
+	// the 4096-rune description limit.
+	longTitle := strings.Repeat("中", 300)
+	ev := Event{Title: longTitle, Body: "ok"}
+	req, _ := buildDiscordRequest(context.Background(), target, ev)
+	body, _ := io.ReadAll(req.Body)
+	var got discordPayload
+	_ = json.Unmarshal(body, &got)
+	titleRunes := []rune(got.Embeds[0].Title)
+	if len(titleRunes) > discordTitleMax {
+		t.Errorf("title runes = %d, want <= %d", len(titleRunes), discordTitleMax)
+	}
+	if !strings.HasSuffix(got.Embeds[0].Title, "…") {
+		t.Errorf("truncated title should end with U+2026, got %q", got.Embeds[0].Title)
+	}
+}
+
+func TestBuildDiscordRequest_EmptyContentGuard(t *testing.T) {
+	target := &store.NotifyTarget{URL: "https://discord.com/api/webhooks/x/y"}
+	req, err := buildDiscordRequest(context.Background(), target, Event{})
+	if err != nil {
+		t.Fatalf("buildDiscordRequest: %v", err)
+	}
+	body, _ := io.ReadAll(req.Body)
+	var got discordPayload
+	_ = json.Unmarshal(body, &got)
+	em := got.Embeds[0]
+	if em.Title == "" && em.Description == "" {
+		t.Errorf("empty embed would be rejected by Discord; got %+v", em)
+	}
+}
+
+func TestBuildAppriseRequest_PayloadShape(t *testing.T) {
+	target := &store.NotifyTarget{URL: "http://apprise:8000/notify/mykey"}
+	ev := Event{Title: "T", Body: "B"}
+	req, err := buildAppriseRequest(context.Background(), target, ev)
+	if err != nil {
+		t.Fatalf("buildAppriseRequest: %v", err)
+	}
+	body, _ := io.ReadAll(req.Body)
+	var got struct{ Title, Body string }
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Title != "T" || got.Body != "B" {
+		t.Errorf("apprise payload = %+v", got)
+	}
+}
+
+func TestTruncateRunes(t *testing.T) {
+	cases := []struct {
+		in   string
+		max  int
+		want string
+	}{
+		{"hello", 10, "hello"},
+		{"hello", 5, "hello"},
+		{"hello", 4, "hel…"},
+		{"中文測試", 4, "中文測試"},
+		{"中文測試", 3, "中文…"},
+		{"", 5, ""},
+		{"x", 0, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := truncateRunes(tc.in, tc.max); got != tc.want {
+				t.Errorf("truncateRunes(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
+			}
+		})
+	}
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/encoder_test.go (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:58:00Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:58:05Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run notify package tests
+
+`go test -race -count=1 ./internal/notify/... 2>&1 | tail -20`
+
+```text
+ok  	github.com/daviddwlee84/sshbbs/internal/notify	2.344s
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:58:10Z)**_
+
+Encoder tests green. Now reframe `docs/notifications.md` per the proposal — primary path is "any webhook URL", apprise becomes opt-in/demo:
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:26Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+# Notifications
+
+Per-user webhook fan-out for four event kinds. Each user opts in via
+**主選單 → 個人設定 → 通知設定** and configures one or more URLs that
+receive the notifications.
+
+| Kind     | Fires when                                                  | Self-event filtered? |
+|----------|-------------------------------------------------------------|----------------------|
+| `push`   | someone 推 / 噓 / → on one of my articles                   | yes                  |
+| `wb`     | someone sends me a 水球 (DM)                                | yes (memo path)      |
+| `mail`   | someone sends me a 站內信                                   | yes (memo path)      |
+| `reply`  | someone posts a `Re:` reply to one of my articles           | yes                  |
+
+There is also an "only when offline" toggle: when on, the dispatcher
+checks `chat.Broker.IsOnline(uid)` and skips delivery if the user has at
+least one live SSH session.
+
+## How it works
+
+The BBS POSTs JSON to whatever URL each user configures. The exact JSON
+shape depends on the URL — the dispatcher picks an encoder by URL prefix:
+
+- **Discord webhook URL** (`https://discord.com/api/webhooks/...`,
+  including `discordapp.com` / `canary` / `ptb` variants) → embed-wrapped
+  payload that Discord renders as a structured message:
+
+    \```json
+    {
+      "username": "SSH-BBS",
+      "embeds": [{"title": "...", "description": "...", "color": 10317823}]
+    }
+    \```
+
+- **Anything else** → flat `{title, body}` apprise-style JSON:
+
+    \```json
+    {"title": "[BBS] alice 推了你的文章", "body": "→ 推 nice post"}
+    \```
+
+  This shape is what `caronc/apprise-api`'s `/notify/<key>` endpoint
+  expects. ntfy.sh, custom webhook receivers, and most generic
+  integrations also handle it cleanly.
+
+Adding a new direct integration (Slack incoming webhooks, Telegram bot
+HTTP, …) means adding one URL pattern + one encoder in
+`internal/notify/encoder.go` — no schema or UI change.
+
+## Picking a target
+
+Most BBS users want one of these. Pick the easiest one that hits a
+device you already carry.
+
+| Want                                          | Use                                                         | ~setup time |
+|-----------------------------------------------|-------------------------------------------------------------|-------------|
+| Discord channel ping                          | Discord channel webhook URL — paste it directly             | 30 s        |
+| Push notification on my phone                 | ntfy.sh topic URL (free public, or self-host)               | 1 min       |
+| Multiple services fan-out (Discord + email + ...) | Self-hosted apprise-api on a machine you control            | 5 min       |
+| Internal Slack channel                        | Slack incoming webhook URL — POSTs `{title, body}` as text  | 2 min       |
+| Custom logic (filter, templating, archive)    | Your own n8n / Zapier / IFTTT / handcrafted endpoint        | varies      |
+
+Whatever you pick: the only thing the BBS needs is **an HTTP(S) URL it
+can POST to**. The user (you) own the credential / API key embedded in
+that URL, and the BBS operator can see it (see "Operator's view" below).
+
+### Walkthrough A: Discord webhook (direct)
+
+1. In Discord: server settings → **Integrations** → **Webhooks** →
+   **New Webhook** → pick the channel → **Copy Webhook URL**.
+   The URL looks like `https://discord.com/api/webhooks/<id>/<token>`.
+2. SSH into the BBS, **主選單 → 個人設定 → 通知設定 → `a` 新增 target**:
+   - **Label**: `discord` (just for your bookkeeping)
+   - **URL**: paste the Discord webhook URL verbatim
+3. Tick the events you want (推/噓 / 水球 / 信箱 / Re:), `Ctrl+S` to save.
+4. Have a friend push your article (or send yourself mail from a second
+   account) → expect the embed-wrapped notification in Discord within
+   a second or two.
+
+The BBS automatically detects the Discord URL prefix and switches to
+the embed envelope — no flag, no format selector.
+
+### Walkthrough B: ntfy.sh (push notification on phone)
+
+1. Install the [ntfy app](https://ntfy.sh/) on iOS / Android, or use
+   the web UI.
+2. Subscribe to a topic — pick something unguessable, e.g.
+   `bbs-alice-7f3a91`. Topic names are public-by-design, so anyone who
+   guesses yours can read it. Use a long random suffix.
+3. Add target in BBS:
+   - **URL**: `https://ntfy.sh/bbs-alice-7f3a91`
+4. ntfy renders the `{title, body}` JSON as a notification with the
+   title as the heading and body as the message text.
+
+For self-hosted ntfy with auth, use
+`https://<user>:<password>@ntfy.example.com/<topic>`.
+
+### Walkthrough C: Self-hosted apprise-api (multi-service fan-out)
+
+If you want one webhook hit to fan out to Discord + Telegram + email
++ SMS, run [`caronc/apprise-api`](https://github.com/caronc/apprise-api)
+on a machine you control (NAS, VPS, homelab). The repo's bundled
+demo profile is one option (see "Demo profile" below); production
+deployments should run their own.
+
+1. On your machine: `docker run -d -p 8000:8000 -v ./config:/config caronc/apprise:latest`
+2. Register your apprise:// URLs under a key:
+
+    \```bash
+    curl -X POST http://your-host:8000/add/mykey \
+      -H 'Content-Type: application/json' \
+      -d '{"urls":"discord://<id>/<token>,tgram://<bot>/<chat>,mailto://user:pass@gmail.com"}'
+    \```
+
+3. Add target in BBS:
+   - **URL**: `http://your-host:8000/notify/mykey`
+4. Apprise translates `{title, body}` into each service's native format.
+
+The full apprise:// URL catalog (Slack, Telegram, ntfy.sh, SMTP,
+Pushover, 100+ more) is at <https://github.com/caronc/apprise/wiki>.
+
+## BBS-side configuration (same for every target type)
+
+Inside 通知設定:
+
+- **Toggle list (top half)**: Space flips a row. Ctrl+S persists. The
+  five rows: 推/噓 / 水球 / 信箱 / Re: 回文 / 僅在離線時通知.
+- **Target list (bottom half)**: each row is one URL.
+  - `a` add (inline form)
+  - `e` edit (URL or label)
+  - `t` toggle enabled (preserves the row, just stops sending)
+  - `d` delete
+- **URL hostname cheat sheet** (only matters for the bundled demo
+  apprise instance — direct webhooks like Discord don't have this
+  problem since they're public URLs):
+
+    | BBS runs in…              | Demo apprise URL                                  |
+    |---------------------------|---------------------------------------------------|
+    | docker compose with `--profile demo` | `http://apprise:8000/notify/<key>`     |
+    | host (`make run`)         | `http://localhost:8000/notify/<key>`              |
+    | different host / network  | `http://<apprise-host>:8000/notify/<key>`         |
+
+## Demo profile: bundled apprise-api
+
+The repo's [`docker-compose.yml`](../docker-compose.yml) ships a
+`caronc/apprise-api` service under the `demo` profile. **It is not
+started by default.** Use it for:
+
+- single-user homelab deployments (you = operator = only user)
+- local development
+- demos / smoke testing — see [`cmd/bbsmoke`](../cmd/bbsmoke/main.go)
+  for the end-to-end harness this PR was developed against
+
+\```bash
+docker compose --profile demo up -d   # brings up apprise + sshbbs + hostkey-init
+make compose-down                     # stops everything
+\```
+
+**Do not use the bundled apprise on a multi-tenant BBS.** Reasons in
+"Operator's view" below — the short version is its admin REST API on
+:8000 has no authentication, so any user with network reachability can
+read or delete every other user's keys. Production multi-user
+deployments should either (a) point each user at their own apprise
+instance, (b) point each user at a direct webhook (Discord/ntfy/etc.),
+or (c) run apprise-api with its own authentication proxy in front.
+
+## Operator's view (privacy / threat model)
+
+What the BBS operator can see:
+
+- **The target URL each user added.** This URL itself is the
+  credential — a Discord webhook URL grants send-as-this-channel; an
+  apprise-api URL exposes the apprise key. Treat `data/bbs.db` as
+  containing user secrets. Backup / RBAC / encryption-at-rest decisions
+  should match.
+- **Every notification's title and body excerpt** that left the BBS,
+  via debug logs (`charmbracelet/log` at warn-or-above by default;
+  bump to debug only when investigating).
+
+What the operator does **not** see:
+
+- The downstream service credentials (Discord token / Telegram bot
+  token / SMTP password) — those live wherever the user pointed the
+  webhook URL, never on the BBS.
+
+What users should know:
+
+- Notification body excerpts up to ~280 characters of mail body / push
+  comment. If you don't want even that on the receiving service, route
+  through self-hosted apprise-api configured to drop body and only
+  forward titles.
+- Webhook URLs can be revoked (regenerated in Discord / rotated in
+  apprise) at any time; the BBS will start logging `notify: target
+  rejected` 4xx until the user updates the URL in 通知設定.
+
+## Payload schema reference
+
+### Default ({title, body} for apprise-api / ntfy / generic)
+
+\```json
+{"title": "[BBS] bob 推了你的文章 «Hello»", "body": "→ 推 nice post"}
+\```
+
+Headers: `Content-Type: application/json`, `User-Agent: sshbbs-notify/1`.
+
+### Discord embed (when URL prefix matches `discord.com/api/webhooks/`)
+
+\```json
+{
+  "username": "SSH-BBS",
+  "embeds": [{
+    "title": "[BBS] bob 推了你的文章 «Hello»",
+    "description": "→ 推 nice post",
+    "color": 10317823
+  }]
+}
+\```
+
+Limits: title ≤ 256 runes, description ≤ 4096 runes — both truncated
+with `…` rather than byte-cut, so CJK glyphs aren't corrupted.
+
+## Troubleshooting
+
+| Symptom                                | Where to look                                                   |
+|----------------------------------------|------------------------------------------------------------------|
+| No notification fires at all           | Confirm the row in `user_notif_targets` exists and `enabled = 1`; confirm the matching pref toggle is on in 通知設定. |
+| BBS log says `notify: target rejected` (4xx) | Webhook returned an error. `curl -v` the same URL with the same JSON to see the receiver's complaint. Common Discord 400: payload didn't match the embed schema (auto-detect should prevent this — file a bug if you see it). |
+| BBS log says `notify: post failed`     | Network error / DNS / TLS. From the BBS host: `curl -v <target-url>` with a sample payload. |
+| Discord receives nothing but apprise-style URL works | URL probably doesn't match the auto-detect prefix. Confirm it starts with `https://discord.com/api/webhooks/` — variants like `discordapp.com` are also detected, but a CDN proxy in front of Discord might break detection. |
+| Notification fires while user is online | `only_when_offline` is unchecked. Tick it in 通知設定. |
+| Same event fires twice                 | Two enabled targets pointing at the same upstream. Check the target list. |
+
+## Architecture decision: webhook indirection, not embedded library
+
+We considered three architectures:
+
+1. **Vendor `unraid/apprise-go`** — pure-Go, no Python, but in v0.1.x
+   alpha with no documented Go API. Locks the BBS to its release cadence.
+2. **Shell out to `apprise` CLI** — works but adds an external binary
+   dependency to the deployment story.
+3. **Generic webhook POST (chosen)** — the BBS speaks one protocol
+   (HTTP POST JSON), and the URL prefix selects the encoder. Direct
+   integrations (Discord) get native payloads; everything else gets
+   the apprise-style envelope. No library lock-in, no required sidecar.
+
+The bundled `caronc/apprise-api` in the `demo` compose profile is a
+convenience for single-user homelab cases, not the recommended path
+for multi-user deployments.
+
+```
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/notifications.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:35Z)**_
+
+Now README — make the feature line neutral, remove the apprise-as-default framing:
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:40Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/README.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:44Z)**_
+
+Update the inline notify-screen URL placeholder to match new framing too:
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:46Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Find placeholder text
+
+`grep -n "apprise:8000\|apprise-api\|notify/<key>" internal/tui/screen_notify_settings.go`
+
+```text
+69:	m.editURL.Placeholder = "http://apprise:8000/notify/<key>  或任何接受 JSON POST 的 webhook"
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:52Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/tui/screen_notify_settings.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:59:56Z)**_
+
+Smoke test against bundled apprise (still up under demo profile) + run full test suite:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:01:17Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+E2E smoke + full test suite
+
+```bash
+curl -fsS http://localhost:8000/status >/dev/null && echo "apprise alive"
+curl -s -X POST http://localhost:8000/add/smoketest \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":"json://host.docker.internal:9999"}' && echo
+go run ./cmd/bbsmoke 2>&1 | tail -8
+curl -s -X POST http://localhost:8000/del/smoketest && echo
+echo --- full test suite ---
+go test -race -count=1 ./... 2>&1 | tail -15
+```
+
+```text
+apprise alive
+{"error": null}
+[sink] listening on 0.0.0.0:9999
+[db] alice id=1, target id=1 → http://localhost:8000/notify/smoketest
+[dispatch] kind=push to=1 from=bob
+[sink] received 192 bytes:
+{"version": "1.0", "title": "[BBS-smoke] bob \u63a8\u4e86\u4f60\u7684\u6587\u7ae0 \u00abHello\u00bb", "message": "\u2192 \u63a8 nice post (round-trip test)", "attachments": [], "type": "info"}
+OK
+Successfully removed configuration
+--- full test suite ---
+?   	github.com/daviddwlee84/sshbbs/cmd/bbsmoke	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/cmd/sshbbs	1.892s
+ok  	github.com/daviddwlee84/sshbbs/internal/auth	46.726s
+ok  	github.com/daviddwlee84/sshbbs/internal/chat	3.962s
+ok  	github.com/daviddwlee84/sshbbs/internal/markdown	3.535s
+ok  	github.com/daviddwlee84/sshbbs/internal/notify	3.388s
+ok  	github.com/daviddwlee84/sshbbs/internal/seed	2.583s
+?   	github.com/daviddwlee84/sshbbs/internal/server	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/store	10.958s
+?   	github.com/daviddwlee84/sshbbs/internal/store/storetest	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	70.969s
+?   	github.com/daviddwlee84/sshbbs/internal/version	[no test files]
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:01:32Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:01:43Z)**_
+
+完成。檢查清單：
+
+| 項目 | 狀態 |
+|------|------|
+| `docker-compose.yml`: apprise → `profiles: ["demo"]`, sshbbs 拿掉 depends_on apprise | ✓ |
+| `internal/notify/encoder.go`: URL-prefix → encoder 選擇，Discord embed envelope | ✓ |
+| `internal/notify/encoder_test.go`: detectFormat 表 + Discord payload + truncate (CJK-safe ≤256/4096) + 空 embed guard + apprise default | ✓ |
+| `internal/notify/dispatcher.go`: post() 改用 buildRequest，丟掉 pre-marshal | ✓ |
+| `docs/notifications.md`: 主敘事換成「user 的 URL, user 的事」+ 三條 walkthrough (Discord / ntfy / self-hosted apprise) + demo profile 章節 + Operator threat model | ✓ |
+| `README.md`: feature 行去 apprise 中心化 | ✓ |
+| `screen_notify_settings`: URL placeholder 改成 Discord/ntfy lead | ✓ |
+| `cmd/bbsmoke` round-trip: apprise URL pattern → apprise encoder → 仍綠 | ✓ |
+| `go test -race ./...` 全綠（含 6 個 Discord encoder 新測試） | ✓ |
+
+關鍵 UX：user 貼 Discord webhook URL 進去什麼都不用選，dispatcher 自動切 embed envelope。Discord 收到的會是長這樣：
+
+```json
+{
+  "username": "SSH-BBS",
+  "embeds": [{
+    "title": "[BBS] bob 推了你的文章 «Hello»",
+    "description": "→ 推 nice post",
+    "color": 10317823
+  }]
+}
+```
+
+Discord 在 channel 顯示就是個帶左邊紫色 accent bar、有粗體 title + description 的 embed，不是普通 chat 訊息。
+
+apprise 是不是要關掉 (`docker compose --profile demo down apprise`)？還是留著？要 commit 這批改動嗎？
+
+---
+
+_**User (2026-05-06 12:02:20Z)**_
+
+<bash-input>docker compose --profile demo down apprise</bash-input>
+
+_**User (2026-05-06 12:02:23Z)**_
+
+<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>
+
+_**User (2026-05-06 12:02:23Z)**_
+
+<bash-stdout> Container 2026-04-29-ssh-bbs-apprise-1  Stopping
+ Container 2026-04-29-ssh-bbs-apprise-1  Stopped
+ Container 2026-04-29-ssh-bbs-apprise-1  Removing
+ Container 2026-04-29-ssh-bbs-apprise-1  Removed
+ Network 2026-04-29-ssh-bbs_default  Removing
+ Network 2026-04-29-ssh-bbs_default  Removed</bash-stdout><bash-stderr></bash-stderr>
+
+_**User (2026-05-06 12:02:28Z)**_
+
+好 commit吧
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 12:02:33Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:02:34Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Snapshot dirty state
+
+`git status --short`
+
+```text
+ M .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+ M README.md
+ M docker-compose.yml
+ M docs/notifications.md
+ M internal/notify/dispatcher.go
+ M internal/tui/screen_notify_settings.go
+?? internal/notify/encoder.go
+?? internal/notify/encoder_test.go
+```
 </details></tool-use>

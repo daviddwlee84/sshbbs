@@ -66,7 +66,7 @@ func newNotifySettingsModel(deps Deps) notifySettingsModel {
 	m.editLabel.CharLimit = 64
 	m.editLabel.Width = 60
 	m.editURL = textinput.New()
-	m.editURL.Placeholder = "http://apprise:8000/notify/<key>  或任何接受 JSON POST 的 webhook"
+	m.editURL.Placeholder = "Discord webhook URL / https://ntfy.sh/<topic> / 任何 HTTP(S) 端點"
 	m.editURL.CharLimit = 512
 	m.editURL.Width = 60
 
