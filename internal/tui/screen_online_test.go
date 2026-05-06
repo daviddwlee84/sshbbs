@@ -119,5 +119,34 @@ func TestOnline_ForwardKeysNoopWhenEmpty(t *testing.T) {
 	}
 }
 
+// 't' opens a 1-to-1 thread with the cursored user (chat-style entry point,
+// distinct from 'enter' which opens compose).
+func TestOnline_TKeyOpensThread(t *testing.T) {
+	m := newOnlineFixture(t, "alice", "bob")
+	// Move to bob (index 1).
+	model, _ := m.Update(keyOf("j"))
+	m = model.(onlineModel)
+	_, cmd := m.Update(keyOf("t"))
+	nav, ok := runCmd(cmd).(NavigateMsg)
+	if !ok {
+		t.Fatalf("want NavigateMsg")
+	}
+	if nav.To != ScreenWBThread {
+		t.Errorf("To = %v, want ScreenWBThread", nav.To)
+	}
+	// In the fixture, bob is the second registered user → UserID=2.
+	if nav.CounterpartyUserID != 2 {
+		t.Errorf("CounterpartyUserID = %d, want 2 (bob)", nav.CounterpartyUserID)
+	}
+}
+
+func TestOnline_TKeyNoopWhenEmpty(t *testing.T) {
+	m := newOnlineFixture(t)
+	_, cmd := m.Update(keyOf("t"))
+	if runCmd(cmd) != nil {
+		t.Errorf("t on empty list should be no-op")
+	}
+}
+
 var _ tea.Model = onlineModel{}
 var _ = (*store.Store)(nil) // keep import live for future expansion

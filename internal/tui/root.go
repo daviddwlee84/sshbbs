@@ -163,6 +163,8 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newWBInboxModel(m.deps)
 	case ScreenWBCompose:
 		sub = newWBComposeModel(m.deps, n.Recipient)
+	case ScreenWBThread:
+		sub = newWBThreadModel(m.deps, n.CounterpartyUserID)
 	case ScreenOnline:
 		sub = newOnlineModel(m.deps)
 	case ScreenMailInbox:

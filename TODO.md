@@ -42,6 +42,7 @@ Worth doing, no rush.
 - [ ] **[M] Structured logging via `log/slog`** — replace the package-level `log` calls in `internal/server` with slog, add per-session correlation IDs.
 - [ ] **[M] Rate limiting on register / post** — token-bucket per IP for register, per-user for post. The PTT bot wave we'd inevitably attract.
 - [ ] **[M] SQLite FTS5 search across articles** — virtual table + trigger to mirror inserts. Useful even for a small archive; can be opt-in via build tag if `modernc.org/sqlite` doesn't bundle FTS5.
+- [ ] **[M] DM 視窗 (Phase 2 of 水球 thread feature)** — upgrade `wbThreadModel` (today: read-only conversation history) to a split-pane DM: scrollback on top, single-line textinput at the bottom. Tab toggles focus, Enter sends via the existing `WaterBalloons().Insert` + `Broker.Send` path so persistence + replay stay identical, success appends locally for instant feedback. Add toast suppression in `Root.Update` when the active screen is a `wbThreadModel` matching the incoming wb's counterparty (Phase 1 deliberately leaves both toast and thread firing). Phase 1 design + Phase 2 sketch in `.claude/plans/jiggly-hopping-wolf.md`.
 
 ## P3
 

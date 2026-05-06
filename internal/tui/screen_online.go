@@ -63,6 +63,16 @@ func (m onlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{To: ScreenWBCompose, Recipient: u.UserIDStr}
 			}
+		case "t":
+			// Open the 1-to-1 conversation thread with the cursored user.
+			// Compose stays on Enter; t is the chat-style entry point.
+			if len(m.users) == 0 {
+				return m, nil
+			}
+			u := m.users[m.cursor]
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenWBThread, CounterpartyUserID: u.UserID}
+			}
 		}
 	}
 	return m, nil
@@ -102,7 +112,7 @@ func (m onlineModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l send water balloon · Esc/←/h back · Q quit"))
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l 丟水球 · t 對話 thread · Esc/←/h back · Q quit"))
 	b.WriteString("\n")
 	return b.String()
 }

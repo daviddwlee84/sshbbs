@@ -11,6 +11,7 @@ const (
 	ScreenPostCompose
 	ScreenWBInbox
 	ScreenWBCompose
+	ScreenWBThread
 	ScreenOnline
 	ScreenMailInbox
 	ScreenMailThread
@@ -29,9 +30,10 @@ type NavigateMsg struct {
 	To           Screen
 	BoardID      int64
 	ArticleID    int64
-	Recipient    string // for ScreenWBCompose / ScreenMailCompose: prefilled recipient userid
-	MailID       int64  // for ScreenMailCompose: parent mail id when replying
-	MailThreadID int64  // for ScreenMailThread: which thread to open
+	Recipient          string // for ScreenWBCompose / ScreenMailCompose: prefilled recipient userid
+	MailID             int64  // for ScreenMailCompose: parent mail id when replying
+	MailThreadID       int64  // for ScreenMailThread: which thread to open
+	CounterpartyUserID int64  // for ScreenWBThread: which 1-to-1 thread to open
 }
 
 // ErrorMsg surfaces an error as a transient toast.

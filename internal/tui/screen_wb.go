@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,7 +21,7 @@ import (
 
 type wbInboxModel struct {
 	deps    Deps
-	items   []*store.WaterBalloon
+	items   []*store.WBCounterparty
 	cursor  int
 	width   int
 	height  int
@@ -27,12 +29,9 @@ type wbInboxModel struct {
 }
 
 func newWBInboxModel(deps Deps) wbInboxModel {
-	items, err := deps.Store.WaterBalloons().ListInboxFor(context.Background(), deps.User.ID, 100)
-	// Mark all unread as read once shown — matches PTT behaviour where
-	// reading the inbox clears the "new mail" indicator.
-	if err == nil {
-		_ = deps.Store.WaterBalloons().MarkAllReadFor(context.Background(), deps.User.ID)
-	}
+	items, err := deps.Store.WaterBalloons().ListCounterpartiesFor(context.Background(), deps.User.ID, 100)
+	// NOTE: we deliberately do NOT mark anything as read here. Mark-read
+	// now happens on entering a specific thread (see wbThreadModel).
 	return wbInboxModel{deps: deps, items: items, loadErr: err}
 }
 
@@ -63,7 +62,7 @@ func (m wbInboxModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			it := m.items[m.cursor]
 			return m, func() tea.Msg {
-				return NavigateMsg{To: ScreenWBCompose, Recipient: it.FromUserIDStr}
+				return NavigateMsg{To: ScreenWBThread, CounterpartyUserID: it.UserID}
 			}
 		}
 	}
@@ -88,28 +87,32 @@ func (m wbInboxModel) View() string {
 
 	const (
 		dateW   = 16
-		fromW   = 14
+		nameW   = 14
 		statusW = 5
 	)
-	bodyW := max(20, m.width-2-dateW-1-fromW-1-statusW-3)
+	previewW := max(20, m.width-2-dateW-1-nameW-1-statusW-3)
 	header := fmt.Sprintf(" %s  %s  %s  %s",
-		PadRight("Date", dateW),
-		PadRight("From", fromW),
-		PadRight("•", statusW),
-		PadRight("Body", bodyW),
+		PadRight("Last", dateW),
+		PadRight("With", nameW),
+		PadRight("New", statusW),
+		PadRight("Preview", previewW),
 	)
 	b.WriteString(StyleDim.Render(header) + "\n")
 
 	for i, it := range m.items {
 		status := "·"
-		if !it.ReadAt.Valid {
-			status = "NEW"
+		if it.UnreadCount > 0 {
+			status = fmt.Sprintf("%d", it.UnreadCount)
+		}
+		preview := it.LastBody
+		if it.LastFromMe {
+			preview = "you: " + preview
 		}
 		row := fmt.Sprintf(" %s  %s  %s  %s",
-			PadRight(it.CreatedAt.Format("2006-01-02 15:04"), dateW),
-			PadRight(it.FromUserIDStr, fromW),
+			PadRight(it.LastAt.Format("2006-01-02 15:04"), dateW),
+			PadRight(it.UserIDStr, nameW),
 			PadRight(status, statusW),
-			Truncate(it.Body, bodyW),
+			Truncate(preview, previewW),
 		)
 		if i == m.cursor {
 			b.WriteString(StyleHighlight.Render("▸"+row[1:]) + "\n")
@@ -118,7 +121,7 @@ func (m wbInboxModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l/r reply · c compose · Esc/←/h back"))
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l/r open · c compose · Esc/←/h back"))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -288,4 +291,153 @@ func (m wbComposeModel) View() string {
 	}
 	b.WriteString("\n  " + StyleHelp.Render("Tab switch field · Enter (in To) → body · Ctrl+S send · Esc cancel"))
 	return b.String()
+}
+
+// =====================================================================
+// Thread (1-to-1 conversation history with one counterparty)
+// =====================================================================
+
+type wbThreadModel struct {
+	deps     Deps
+	cpID     int64  // counterparty user.id
+	cpUserID string // counterparty current handle (from users JOIN, not from_userid snapshot)
+	items    []*store.WaterBalloon
+	scroll   int
+	width    int
+	height   int
+	loadErr  error
+}
+
+func newWBThreadModel(deps Deps, counterpartyID int64) wbThreadModel {
+	ctx := context.Background()
+	cp, err := deps.Store.Users().GetByID(ctx, counterpartyID)
+	if err != nil {
+		return wbThreadModel{deps: deps, cpID: counterpartyID, loadErr: err}
+	}
+	items, err := deps.Store.WaterBalloons().ListConversation(ctx, deps.User.ID, counterpartyID, 200)
+	if err == nil {
+		// Mark only the inbound side as read on entering the thread.
+		// Replaces the old "open inbox = ack everything" behaviour.
+		_ = deps.Store.WaterBalloons().MarkConversationRead(ctx, deps.User.ID, counterpartyID)
+		// Reflect the mark in our local copy so View doesn't show stale "NEW".
+		now := time.Now()
+		for _, w := range items {
+			if w.ToUserID == deps.User.ID && !w.ReadAt.Valid {
+				w.ReadAt = sql.NullTime{Time: now, Valid: true}
+			}
+		}
+	}
+	return wbThreadModel{
+		deps:     deps,
+		cpID:     counterpartyID,
+		cpUserID: cp.UserID,
+		items:    items,
+		loadErr:  err,
+	}
+}
+
+func (m wbThreadModel) Init() tea.Cmd { return nil }
+
+func (m wbThreadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case WBIncomingMsg:
+		// Live append: when the broker fans out a wb from our counterparty
+		// while we're viewing this thread, fold it in instead of waiting
+		// for re-entry. Toast still fires from Root (Phase 1 keeps both;
+		// toast suppression is Phase 2 territory).
+		if !strings.EqualFold(msg.FromUserID, m.cpUserID) {
+			return m, nil
+		}
+		ctx := context.Background()
+		if wb, err := m.deps.Store.WaterBalloons().GetByID(ctx, msg.ID); err == nil {
+			m.items = append(m.items, wb)
+			// Auto-scroll to the new bottom so the user sees the message.
+			m.scroll = 1 << 30
+		}
+		_ = m.deps.Store.WaterBalloons().MarkRead(ctx, msg.ID)
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "backspace", "left", "h":
+			return m, func() tea.Msg { return NavigateMsg{To: ScreenWBInbox} }
+		case "Q":
+			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+		case "up", "k":
+			if m.scroll > 0 {
+				m.scroll--
+			}
+		case "down", "j":
+			m.scroll++ // clamped at render time
+		case "g", "home":
+			m.scroll = 0
+		case "G", "end":
+			m.scroll = 1 << 30 // clamped at render time
+		case "c", "r":
+			cp := m.cpUserID
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenWBCompose, Recipient: cp}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m wbThreadModel) View() string {
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 對話 with %s ", m.cpUserID)))
+	b.WriteString("\n\n")
+
+	if m.loadErr != nil {
+		b.WriteString("  " + StyleError.Render("⚠ "+m.loadErr.Error()) + "\n")
+		return b.String()
+	}
+	if len(m.items) == 0 {
+		b.WriteString("  " + StyleDim.Render("(empty thread — press c to start)") + "\n")
+		b.WriteString("\n  " + StyleHelp.Render("c compose · Esc/←/h back · Q quit"))
+		return b.String()
+	}
+
+	lines := m.renderLines()
+	visible := m.height - 5
+	if visible < 1 {
+		visible = len(lines)
+	}
+	if m.scroll > len(lines)-visible {
+		m.scroll = max(0, len(lines)-visible)
+	}
+	end := min(m.scroll+visible, len(lines))
+	for _, ln := range lines[m.scroll:end] {
+		b.WriteString(ln + "\n")
+	}
+	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k scroll · g/G top/end · c/r reply · Esc/←/h back · Q quit"))
+	return b.String()
+}
+
+// renderLines flattens the message list to display lines so scroll math is
+// straightforward. Each message contributes a header line + body lines + a
+// blank separator. Body wrapping is left to the terminal (240-char cap on
+// compose keeps it short in practice).
+func (m wbThreadModel) renderLines() []string {
+	out := make([]string, 0, len(m.items)*3)
+	viewerID := int64(0)
+	if m.deps.User != nil {
+		viewerID = m.deps.User.ID
+	}
+	for _, w := range m.items {
+		var sender string
+		if w.FromUserID == viewerID {
+			sender = StyleDim.Render("you")
+		} else {
+			// Always use the current cp handle, not w.FromUserIDStr (snapshot).
+			sender = StyleHighlight.Render(m.cpUserID)
+		}
+		out = append(out, "  "+sender+"  "+StyleDim.Render(w.CreatedAt.Format("2006-01-02 15:04")))
+		out = append(out, "    "+w.Body)
+		out = append(out, "")
+	}
+	return out
 }
