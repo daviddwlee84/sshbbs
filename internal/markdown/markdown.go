@@ -71,6 +71,7 @@ type Parsed struct {
 	UpdatedAt  time.Time
 	ScoreHint  int64
 	IDHint     int64
+	Pinned     bool
 	Body       string
 	Pushes     []ParsedPush
 	// Extra preserves any frontmatter key we don't recognize, so future
@@ -113,6 +114,9 @@ func Format(a *store.Article, pushes []*store.Push, opts FormatOpts) (string, er
 	writeFrontmatter(&b, "score", strconv.FormatInt(a.RecommendScore, 10))
 	if a.ID > 0 {
 		writeFrontmatter(&b, "id", strconv.FormatInt(a.ID, 10))
+	}
+	if a.PinnedAt.Valid {
+		writeFrontmatter(&b, "pinned", "true")
 	}
 	b.WriteString(frontmatterDelim + "\n\n")
 
@@ -252,6 +256,8 @@ func parseFrontmatter(p *Parsed, fm string) {
 			if n, err := strconv.ParseInt(val, 10, 64); err == nil {
 				p.IDHint = n
 			}
+		case "pinned":
+			p.Pinned = val == "true" || val == "1"
 		default:
 			p.Extra[key] = val
 		}

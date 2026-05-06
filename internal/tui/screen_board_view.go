@@ -45,6 +45,21 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case ArticlePinChangedMsg:
+		if m.board != nil && msg.BoardID == m.board.ID {
+			// Pin re-orders the list. Re-anchor the cursor by article ID so
+			// the same article stays highlighted across the reflow.
+			anchorID := int64(0)
+			if m.cursor < len(m.articles) {
+				anchorID = m.articles[m.cursor].ID
+			}
+			ctx := context.Background()
+			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
+				m.articles = arts
+				m.cursor = findCursorByID(arts, anchorID)
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "backspace", "left", "h":
@@ -94,6 +109,30 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{To: ScreenBoardBannerEdit, BoardID: m.board.ID}
 			}
+		case "M":
+			// Toggle pin on the cursor article. Mod+ only — silent no-op
+			// otherwise so non-mods don't get a confusing error toast for
+			// trying a key the help line doesn't even mention to them.
+			if m.board == nil || !m.canPin() || len(m.articles) == 0 {
+				return m, nil
+			}
+			a := m.articles[m.cursor]
+			pinned := !a.PinnedAt.Valid // toggle
+			ctx := context.Background()
+			u := m.deps.User
+			if err := m.deps.Store.Articles().SetPinned(ctx, a.ID, u.ID, u.Role, pinned); err != nil {
+				return m, nil
+			}
+			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
+				m.articles = arts
+				m.cursor = findCursorByID(arts, a.ID)
+			}
+			if m.deps.Broker != nil {
+				m.deps.Broker.SendToAll(u.ID, ArticlePinChangedMsg{
+					BoardID: m.board.ID, ArticleID: a.ID, Pinned: pinned,
+				})
+			}
+			return m, nil
 		}
 	}
 	return m, nil
@@ -153,12 +192,19 @@ func (m boardViewModel) View() string {
 		case a.RecommendScore < 0:
 			score = "X" + fmt.Sprintf("%d", -a.RecommendScore)
 		}
+		// Pinned (板規 / 置頂) articles surface a leading "[M] " marker —
+		// the same glyph PTT uses for M-marked posts. Costs 4 visual cols
+		// of the title cell; long titles still get truncated by Truncate.
+		title := a.Title
+		if a.PinnedAt.Valid {
+			title = "[M] " + a.Title
+		}
 		row := fmt.Sprintf(" %s  %s  %s  %s  %s",
 			PadRight(fmt.Sprintf("%d", i+1), idxW),
 			PadRight(a.CreatedAt.Format("01/02 15:04"), dateW),
 			PadRight(score, scoreW),
 			PadRight(a.AuthorUserID, authorW),
-			Truncate(a.Title, titleW),
+			Truncate(title, titleW),
 		)
 		if i == m.cursor {
 			b.WriteString(StyleHighlight.Render("▸"+row[1:]) + "\n")
@@ -185,15 +231,39 @@ func (m boardViewModel) canEditBanner() bool {
 	return m.deps.User != nil && m.deps.User.Role.AtLeast(store.RoleMod)
 }
 
-// appendBannerHelp tacks "b banner" / "B edit" hints onto a help-line
-// only when relevant: `b` requires a non-empty banner; `B` requires mod+.
-// Order matches the existing pattern (action keys before navigation).
+// canPin gates the M shortcut. Mirrors canEditBanner — pinning is a
+// moderation action and intentionally does NOT admit the article author
+// (an author shouldn't bubble their own post to the top).
+func (m boardViewModel) canPin() bool {
+	return m.deps.User != nil && m.deps.User.Role.AtLeast(store.RoleMod)
+}
+
+// findCursorByID returns the index of the article with the given ID in
+// the slice, or 0 if not found. Used to re-anchor the cursor after a
+// pin/unpin reorders the list.
+func findCursorByID(arts []*store.Article, id int64) int {
+	for i, a := range arts {
+		if a.ID == id {
+			return i
+		}
+	}
+	return 0
+}
+
+// appendBannerHelp tacks "b banner" / "B edit" / "M pin" hints onto a
+// help-line only when relevant: `b` requires a non-empty banner; `B` and
+// `M` require mod+. Order matches the existing pattern (action keys
+// before navigation). Name kept for git-blame stability — it now covers
+// all mod-affordances on the board view, not just banner ones.
 func (m boardViewModel) appendBannerHelp(help string) string {
 	if m.board != nil && m.board.Banner != "" {
 		help += " · b banner"
 	}
 	if m.canEditBanner() {
 		help += " · B edit"
+	}
+	if m.canPin() {
+		help += " · M pin/unpin"
 	}
 	return help
 }

@@ -82,3 +82,14 @@ type ArticleAddedMsg struct {
 type ArticleUpdatedMsg struct {
 	ArticleID int64
 }
+
+// ArticlePinChangedMsg is broadcast when a mod pins or unpins an article.
+// Board-view models filter by BoardID and re-fetch the article list so the
+// pinned-first ordering and the [M] marker stay current across all live
+// sessions viewing the same board. ArticleID + Pinned are advisory; the
+// re-fetch is the source of truth.
+type ArticlePinChangedMsg struct {
+	BoardID   int64
+	ArticleID int64
+	Pinned    bool
+}

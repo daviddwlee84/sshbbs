@@ -305,6 +305,164 @@ func TestArticles_Update_NotFound(t *testing.T) {
 	}
 }
 
+func TestArticles_SetPinned_BasicToggle(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "rules", "body")
+
+	if a.PinnedAt.Valid {
+		t.Fatalf("freshly created article should not be pinned, got %+v", a.PinnedAt)
+	}
+
+	if err := st.Articles().SetPinned(ctx, a.ID, mod.ID, store.RoleMod, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	got, _ := st.Articles().GetByID(ctx, a.ID)
+	if !got.PinnedAt.Valid {
+		t.Errorf("after pin: PinnedAt.Valid = false, want true")
+	}
+
+	if err := st.Articles().SetPinned(ctx, a.ID, mod.ID, store.RoleMod, false); err != nil {
+		t.Fatalf("unpin: %v", err)
+	}
+	got, _ = st.Articles().GetByID(ctx, a.ID)
+	if got.PinnedAt.Valid {
+		t.Errorf("after unpin: PinnedAt.Valid = true, want false (got %v)", got.PinnedAt.Time)
+	}
+}
+
+func TestArticles_SetPinned_RequiresMod(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "rules", "body")
+
+	// Author themselves cannot pin their own post — pinning is a moderation
+	// action and intentionally diverges from Update/Delete which admit author.
+	for _, role := range []store.Role{store.RoleGuest, store.RoleUser} {
+		t.Run("denied_"+string(role), func(t *testing.T) {
+			err := st.Articles().SetPinned(ctx, a.ID, user.ID, role, true)
+			if !errors.Is(err, store.ErrPermissionDenied) {
+				t.Errorf("got %v, want ErrPermissionDenied", err)
+			}
+			got, _ := st.Articles().GetByID(ctx, a.ID)
+			if got.PinnedAt.Valid {
+				t.Error("article was pinned despite permission denial")
+			}
+		})
+	}
+
+	for _, role := range []store.Role{store.RoleMod, store.RoleAdmin} {
+		t.Run("allowed_"+string(role), func(t *testing.T) {
+			if err := st.Articles().SetPinned(ctx, a.ID, user.ID, role, true); err != nil {
+				t.Fatalf("SetPinned(%s): %v", role, err)
+			}
+			// reset for next iteration
+			_ = st.Articles().SetPinned(ctx, a.ID, user.ID, role, false)
+		})
+	}
+}
+
+func TestArticles_SetPinned_NotFound(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	if err := st.Articles().SetPinned(ctx, 9999, mod.ID, store.RoleMod, true); !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("got %v, want ErrArticleNotFound", err)
+	}
+}
+
+func TestArticles_ListByBoard_PinnedFirst(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	// Create four articles in chronological order. Pin the second one
+	// (oldest pin candidate that isn't the very first row, so we can prove
+	// it bubbles to the top regardless of created_at).
+	titles := []string{"first", "second", "third", "fourth"}
+	ids := make(map[string]int64, len(titles))
+	for _, ti := range titles {
+		a, err := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, ti, "")
+		if err != nil {
+			t.Fatalf("create %q: %v", ti, err)
+		}
+		ids[ti] = a.ID
+		time.Sleep(15 * time.Millisecond)
+	}
+	if err := st.Articles().SetPinned(ctx, ids["second"], mod.ID, store.RoleMod, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+
+	got, err := st.Articles().ListByBoard(ctx, board.ID, 0)
+	if err != nil {
+		t.Fatalf("ListByBoard: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("got %d articles, want 4", len(got))
+	}
+	// Expected order: pinned first ("second"), then unpinned by created_at DESC.
+	want := []string{"second", "fourth", "third", "first"}
+	for i, w := range want {
+		if got[i].Title != w {
+			t.Errorf("[%d] = %q, want %q (full order: %v)", i, got[i].Title, w, titlesOf(got))
+		}
+	}
+
+	// Pin a second article — both should now be at the top, ordered by
+	// created_at DESC within the pinned group.
+	if err := st.Articles().SetPinned(ctx, ids["fourth"], mod.ID, store.RoleMod, true); err != nil {
+		t.Fatalf("pin fourth: %v", err)
+	}
+	got, _ = st.Articles().ListByBoard(ctx, board.ID, 0)
+	wantMulti := []string{"fourth", "second", "third", "first"}
+	for i, w := range wantMulti {
+		if got[i].Title != w {
+			t.Errorf("multi-pin [%d] = %q, want %q (full order: %v)", i, got[i].Title, w, titlesOf(got))
+		}
+	}
+}
+
+func TestArticles_Update_PreservesPinnedAt(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "rules v1", "body")
+	if err := st.Articles().SetPinned(ctx, a.ID, mod.ID, store.RoleMod, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	pinnedBefore, _ := st.Articles().GetByID(ctx, a.ID)
+	if !pinnedBefore.PinnedAt.Valid {
+		t.Fatalf("pin precondition failed")
+	}
+	if err := st.Articles().Update(ctx, a.ID, mod.ID, store.RoleMod, "rules v2", "amended body"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got, _ := st.Articles().GetByID(ctx, a.ID)
+	if !got.PinnedAt.Valid {
+		t.Errorf("PinnedAt cleared by Update — must be preserved")
+	}
+	if !got.PinnedAt.Time.Equal(pinnedBefore.PinnedAt.Time) {
+		t.Errorf("PinnedAt mutated by Update: before=%v after=%v", pinnedBefore.PinnedAt.Time, got.PinnedAt.Time)
+	}
+	if got.Title != "rules v2" {
+		t.Errorf("Update did not apply: title=%q", got.Title)
+	}
+}
+
+func titlesOf(arts []*store.Article) []string {
+	out := make([]string, len(arts))
+	for i, a := range arts {
+		out[i] = a.Title
+	}
+	return out
+}
+
 func TestArticles_BoardIsolation(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)

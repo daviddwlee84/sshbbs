@@ -18,6 +18,7 @@ type Article struct {
 	Filemode       int64
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
+	PinnedAt       sql.NullTime
 }
 
 type ArticleRepo struct{ s *Store }
@@ -28,13 +29,13 @@ var (
 )
 
 const articleColumns = `id, board_id, author_id, author_userid, title, body,
-	recommend_score, filemode, created_at, updated_at`
+	recommend_score, filemode, created_at, updated_at, pinned_at`
 
 func scanArticle(row interface{ Scan(...any) error }) (*Article, error) {
 	a := &Article{}
 	err := row.Scan(
 		&a.ID, &a.BoardID, &a.AuthorID, &a.AuthorUserID, &a.Title, &a.Body,
-		&a.RecommendScore, &a.Filemode, &a.CreatedAt, &a.UpdatedAt,
+		&a.RecommendScore, &a.Filemode, &a.CreatedAt, &a.UpdatedAt, &a.PinnedAt,
 	)
 	return a, err
 }
@@ -43,8 +44,12 @@ func (r *ArticleRepo) ListByBoard(ctx context.Context, boardID int64, limit int)
 	if limit <= 0 {
 		limit = 50
 	}
+	// Pinned articles surface first ((pinned_at IS NULL) sorts 0 before 1);
+	// within each group, newest first by created_at then id (the latter
+	// disambiguates rows that share a second-resolution timestamp).
 	rows, err := r.s.db.QueryContext(ctx,
-		`SELECT `+articleColumns+` FROM articles WHERE board_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+		`SELECT `+articleColumns+` FROM articles WHERE board_id = ?
+		 ORDER BY (pinned_at IS NULL), created_at DESC, id DESC LIMIT ?`,
 		boardID, limit,
 	)
 	if err != nil {
@@ -161,5 +166,41 @@ func (r *ArticleRepo) Update(ctx context.Context, articleID, requesterID int64, 
 		`UPDATE articles SET title = ?, body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		newTitle, newBody, articleID,
 	)
+	return err
+}
+
+// SetPinned pins (pinned=true) or unpins (pinned=false) an article. Permission
+// shape mirrors BoardRepo.UpdateBanner: requesterRole must be at-or-above
+// mod. Pinning is a moderation action — unlike Update/Delete it does NOT
+// admit the article author. Returns ErrArticleNotFound when the row is gone,
+// ErrPermissionDenied when the requester is unauthorized.
+//
+// Multi-pin per board is supported: the call simply sets pinned_at; nothing
+// rejects a second pinned row on the same board.
+func (r *ArticleRepo) SetPinned(ctx context.Context, articleID, requesterID int64, requesterRole Role, pinned bool) error {
+	if !requesterRole.AtLeast(RoleMod) {
+		return ErrPermissionDenied
+	}
+	r.s.writeMu.Lock()
+	defer r.s.writeMu.Unlock()
+	var exists int64
+	err := r.s.db.QueryRowContext(ctx,
+		`SELECT id FROM articles WHERE id = ?`, articleID,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrArticleNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if pinned {
+		_, err = r.s.db.ExecContext(ctx,
+			`UPDATE articles SET pinned_at = CURRENT_TIMESTAMP WHERE id = ?`, articleID,
+		)
+	} else {
+		_, err = r.s.db.ExecContext(ctx,
+			`UPDATE articles SET pinned_at = NULL WHERE id = ?`, articleID,
+		)
+	}
 	return err
 }

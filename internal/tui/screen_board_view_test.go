@@ -191,6 +191,155 @@ func TestBoardView_BannerEditKey_GatedByRole(t *testing.T) {
 	}
 }
 
+// 'M' toggles pin state on the cursor article. Mod+ only.
+func TestBoardView_PinKey_GatedByRole(t *testing.T) {
+	cases := []struct {
+		role        store.Role
+		shouldPin   bool
+	}{
+		{store.RoleGuest, false},
+		{store.RoleUser, false},
+		{store.RoleMod, true},
+		{store.RoleAdmin, true},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.role), func(t *testing.T) {
+			m, _, arts := newBoardViewFixture(t)
+			m.deps.User.Role = tc.role
+			// Cursor at 0 (newest, "third"). Pin it.
+			_, _ = m.Update(keyOf("M"))
+
+			got, _ := m.deps.Store.Articles().GetByID(context.Background(), arts[2].ID)
+			if got.PinnedAt.Valid != tc.shouldPin {
+				t.Errorf("%s: pinned = %v, want %v", tc.role, got.PinnedAt.Valid, tc.shouldPin)
+			}
+		})
+	}
+}
+
+// 'M' toggles: pinning then pressing M again unpins.
+func TestBoardView_PinKey_Toggles(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	m.deps.User.Role = store.RoleMod
+
+	// Pin the cursor article (index 0 = "third", the newest).
+	model, _ := m.Update(keyOf("M"))
+	m = model.(boardViewModel)
+	got, _ := m.deps.Store.Articles().GetByID(context.Background(), arts[2].ID)
+	if !got.PinnedAt.Valid {
+		t.Fatal("first M press: not pinned")
+	}
+
+	// Press M again — should unpin.
+	model, _ = m.Update(keyOf("M"))
+	m = model.(boardViewModel)
+	got, _ = m.deps.Store.Articles().GetByID(context.Background(), arts[2].ID)
+	if got.PinnedAt.Valid {
+		t.Errorf("second M press: still pinned, want unpinned")
+	}
+}
+
+// Pinning a NON-first article reorders it to the top, and the cursor
+// follows the same article (re-anchored by ID).
+func TestBoardView_PinKey_ReordersAndPreservesCursor(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	m.deps.User.Role = store.RoleMod
+
+	// Move cursor to the 3rd row (oldest, "first").
+	model, _ := m.Update(keyOf("j"))
+	m = model.(boardViewModel)
+	model, _ = m.Update(keyOf("j"))
+	m = model.(boardViewModel)
+	if m.cursor != 2 || m.articles[m.cursor].ID != arts[0].ID {
+		t.Fatalf("setup: cursor=%d on article %d, want cursor=2 on article %d",
+			m.cursor, m.articles[m.cursor].ID, arts[0].ID)
+	}
+
+	model, _ = m.Update(keyOf("M"))
+	m = model.(boardViewModel)
+	if m.articles[0].ID != arts[0].ID {
+		t.Errorf("pinned article not at index 0: got %d, want %d", m.articles[0].ID, arts[0].ID)
+	}
+	if !m.articles[0].PinnedAt.Valid {
+		t.Error("articles[0] not marked pinned in reloaded slice")
+	}
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (followed the pinned article)", m.cursor)
+	}
+}
+
+// 'M' on an empty article list is a silent no-op (no panic).
+func TestBoardView_PinKey_NoOpWhenEmpty(t *testing.T) {
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+	deps := Deps{Store: st, User: mod, Broker: chat.NewBroker()}
+	deps.User.Role = store.RoleMod
+	m := newBoardViewModel(deps, board.ID)
+	if len(m.articles) != 0 {
+		t.Fatalf("setup: expected 0 articles, got %d", len(m.articles))
+	}
+	// Must not panic.
+	_, _ = m.Update(keyOf("M"))
+}
+
+// ArticlePinChangedMsg for THIS board re-fetches the list and re-anchors
+// the cursor by article ID across the reorder.
+func TestBoardView_AcceptsPinChangedForThisBoard(t *testing.T) {
+	m, board, arts := newBoardViewFixture(t)
+	m.deps.User.Role = store.RoleMod
+
+	// Position cursor on "second" (index 1).
+	model, _ := m.Update(keyOf("j"))
+	m = model.(boardViewModel)
+	if m.articles[m.cursor].ID != arts[1].ID {
+		t.Fatalf("setup: cursor on %d, want %d", m.articles[m.cursor].ID, arts[1].ID)
+	}
+
+	// External actor pins "first" (oldest), then broadcasts.
+	if err := m.deps.Store.Articles().SetPinned(context.Background(), arts[0].ID, m.deps.User.ID, store.RoleAdmin, true); err != nil {
+		t.Fatalf("external pin: %v", err)
+	}
+	model, _ = m.Update(ArticlePinChangedMsg{
+		BoardID: board.ID, ArticleID: arts[0].ID, Pinned: true,
+	})
+	m = model.(boardViewModel)
+
+	if m.articles[0].ID != arts[0].ID {
+		t.Errorf("pinned article not at index 0 after broadcast: got %d", m.articles[0].ID)
+	}
+	if m.articles[m.cursor].ID != arts[1].ID {
+		t.Errorf("cursor moved off 'second': now on %d, want %d", m.articles[m.cursor].ID, arts[1].ID)
+	}
+}
+
+// ArticlePinChangedMsg for a DIFFERENT board must NOT mutate this view.
+func TestBoardView_IgnoresPinChangedForOtherBoard(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	before := len(m.articles)
+	model, _ := m.Update(ArticlePinChangedMsg{
+		BoardID: m.board.ID + 999, ArticleID: 1, Pinned: true,
+	})
+	got := model.(boardViewModel)
+	if len(got.articles) != before {
+		t.Errorf("got %d articles, want %d (unchanged)", len(got.articles), before)
+	}
+}
+
+// View() prefixes pinned rows with "[M] ".
+func TestBoardView_RendersPinnedMarker(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	if err := m.deps.Store.Articles().SetPinned(context.Background(), arts[0].ID, m.deps.User.ID, store.RoleAdmin, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	m = newBoardViewModel(m.deps, m.board.ID) // reload
+	m.width = 80
+	out := m.View()
+	if !strings.Contains(out, "[M]") {
+		t.Errorf("View() lacks [M] marker for pinned article:\n%s", out)
+	}
+}
+
 // renderBanner produces no output when the board has no banner (won't
 // affect existing tests / layout).
 func TestBoardView_RenderBanner_Empty(t *testing.T) {

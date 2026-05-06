@@ -1,16 +1,22 @@
 // Package seed loads default content (currently: welcome / intro articles)
 // from embedded markdown files into the database on first startup.
 //
-// The contract is intentionally weak: a board with any existing article is
-// skipped entirely. That way an admin who edits the seeded welcome article
-// does not see their changes overwritten on the next restart.
+// The contract is intentionally weak: a board's emptiness is sampled once
+// at the start of each seed run. If the board was empty, EVERY matching
+// embedded file is inserted (so welcome.md + welcome-rules.md can co-seed
+// the same fresh board). If the board was non-empty, no files are inserted
+// — an admin who edited the seeded welcome article does not see their
+// changes overwritten, nor see new seed files appear behind them, on the
+// next restart.
 //
 // To add more seed articles, drop another *.md file under internal/seed/articles/
-// with frontmatter naming the target board:
+// with frontmatter naming the target board (and optionally `pinned: true`
+// to mark it as a 板規 / 置頂 article):
 //
 //	---
 //	title: ...
 //	board: Welcome
+//	pinned: true   # optional, defaults to false
 //	---
 //
 //	body...
@@ -36,9 +42,14 @@ import (
 var articlesFS embed.FS
 
 // Articles parses every embedded *.md file and inserts it into the board
-// named by its frontmatter, attributing all of them to adminUserID. A
-// board that already has at least one article is left alone, regardless
-// of how many seed files target it.
+// named by its frontmatter, attributing all of them to adminUserID.
+//
+// Idempotency: emptiness is sampled ONCE per board at the start of this
+// run. A board that was empty at sample time receives ALL its matching
+// seed files (so welcome.md + welcome-rules.md can co-seed the Welcome
+// board); a board that was non-empty at sample time is skipped entirely
+// (so an admin who edited the seeded content doesn't see new files appear
+// behind them on the next restart).
 //
 // Failure to parse or insert any single file logs and continues — a bad
 // seed file should not block startup. Missing boards are also skipped
@@ -106,14 +117,27 @@ func Articles(ctx context.Context, st *store.Store, adminUserID string) error {
 			continue
 		}
 
-		if _, err := st.Articles().Create(ctx, board.ID, admin.ID, admin.UserID, parsed.Title, parsed.Body); err != nil {
+		art, err := st.Articles().Create(ctx, board.ID, admin.ID, admin.UserID, parsed.Title, parsed.Body)
+		if err != nil {
 			log.Printf("seed.Articles: insert %s: %v", e.Name(), err)
 			continue
 		}
-		// Mark this board as no-longer-empty so subsequent seed files for
-		// the same board are skipped.
-		boardEmpty[board.ID] = false
-		log.Printf("seed.Articles: seeded %s into board %q", e.Name(), parsed.BoardName)
+		// `pinned: true` frontmatter → second write to flip pinned_at. Two
+		// statements (Create + SetPinned) are fine here: both go through
+		// writeMu, so the article briefly exists unpinned during seed and
+		// then is pinned. No reader can observe the gap because seed runs
+		// before the SSH listener accepts connections.
+		if parsed.Pinned {
+			if err := st.Articles().SetPinned(ctx, art.ID, admin.ID, admin.Role, true); err != nil {
+				log.Printf("seed.Articles: pin %s: %v", e.Name(), err)
+				// Best-effort: leave the article seeded even if the pin failed.
+			}
+		}
+		// Note: do NOT flip boardEmpty[board.ID] here. The cache must keep
+		// reflecting the START-of-run state so multiple seed files targeting
+		// the same fresh board can co-seed. The board's "seeded" state is
+		// re-evaluated only on the next process restart.
+		log.Printf("seed.Articles: seeded %s into board %q (pinned=%v)", e.Name(), parsed.BoardName, parsed.Pinned)
 	}
 	return nil
 }

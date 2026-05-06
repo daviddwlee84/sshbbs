@@ -147,6 +147,42 @@ func TestFormat_RoundTrip_WithPushes(t *testing.T) {
 	}
 }
 
+func TestFormat_RoundTrip_Pinned(t *testing.T) {
+	a := sampleArticle()
+	a.PinnedAt = sql.NullTime{Time: time.Date(2026, 5, 6, 0, 0, 0, 0, time.UTC), Valid: true}
+	out, err := markdown.Format(a, nil, markdown.FormatOpts{BoardName: "Welcome"})
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	if !strings.Contains(out, "\npinned: true\n") {
+		t.Errorf("missing pinned line in:\n%s", out)
+	}
+	parsed, err := markdown.Parse(out)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !parsed.Pinned {
+		t.Errorf("Parsed.Pinned = false, want true")
+	}
+
+	// Unpinned articles must NOT emit the frontmatter line.
+	a.PinnedAt = sql.NullTime{}
+	out, _ = markdown.Format(a, nil, markdown.FormatOpts{BoardName: "Welcome"})
+	if strings.Contains(out, "pinned:") {
+		t.Errorf("unpinned article leaked pinned line:\n%s", out)
+	}
+	parsed, _ = markdown.Parse(out)
+	if parsed.Pinned {
+		t.Errorf("Parsed.Pinned = true, want false on unpinned")
+	}
+
+	// `pinned: 1` should also parse as true (alias).
+	parsed, _ = markdown.Parse("---\ntitle: x\nboard: Welcome\npinned: 1\n---\n\nbody\n")
+	if !parsed.Pinned {
+		t.Errorf("`pinned: 1` did not parse as true")
+	}
+}
+
 func TestFormat_OmitPushesWhenIncludePushesFalse(t *testing.T) {
 	a := sampleArticle()
 	pushes := samplePushes()

@@ -40,17 +40,30 @@ func TestArticles_SeedsWhenBoardEmpty(t *testing.T) {
 		t.Fatalf("GetByName: %v", err)
 	}
 	got, _ := st.Articles().ListByBoard(ctx, welcome.ID, 10)
-	if len(got) != 1 {
-		t.Fatalf("Welcome article count = %d, want 1", len(got))
+	// welcome.md (greeter) + welcome-rules.md (pinned 板規) co-seed Welcome.
+	if len(got) != 2 {
+		t.Fatalf("Welcome article count = %d, want 2 (welcome.md + welcome-rules.md)", len(got))
 	}
-	if got[0].AuthorUserID != "admin" {
-		t.Errorf("author = %q, want admin", got[0].AuthorUserID)
+	// ListByBoard sorts pinned-first: index 0 is the rules article.
+	if !got[0].PinnedAt.Valid {
+		t.Errorf("first article should be pinned (the rules), PinnedAt.Valid = false")
 	}
-	if !strings.Contains(got[0].Title, "歡迎") {
-		t.Errorf("title = %q, want it to contain 歡迎", got[0].Title)
+	if !strings.Contains(got[0].Title, "板規") {
+		t.Errorf("first title = %q, want it to contain 板規", got[0].Title)
 	}
-	if got[0].Body == "" {
-		t.Error("body is empty")
+	if got[1].PinnedAt.Valid {
+		t.Errorf("second article (greeter) should NOT be pinned, PinnedAt = %v", got[1].PinnedAt.Time)
+	}
+	if !strings.Contains(got[1].Title, "歡迎") {
+		t.Errorf("second title = %q, want it to contain 歡迎", got[1].Title)
+	}
+	for _, a := range got {
+		if a.AuthorUserID != "admin" {
+			t.Errorf("author = %q, want admin", a.AuthorUserID)
+		}
+		if a.Body == "" {
+			t.Errorf("body of %q is empty", a.Title)
+		}
 	}
 }
 
@@ -97,8 +110,8 @@ func TestArticles_IdempotentOverRestarts(t *testing.T) {
 
 	welcome, _ := st.Boards().GetByName(ctx, "Welcome")
 	got, _ := st.Articles().ListByBoard(ctx, welcome.ID, 10)
-	if len(got) != 1 {
-		t.Errorf("after 3 seed runs: %d articles, want 1", len(got))
+	if len(got) != 2 {
+		t.Errorf("after 3 seed runs: %d articles, want 2 (welcome.md + welcome-rules.md, no duplicates)", len(got))
 	}
 }
 
