@@ -58,6 +58,9 @@ func main() {
 	if err := seed.Articles(context.Background(), st, auth.ReservedUsernameAdmin); err != nil {
 		log.Fatalf("seed articles: %v", err)
 	}
+	if err := seed.Banners(context.Background(), st, auth.ReservedUsernameAdmin); err != nil {
+		log.Fatalf("seed banners: %v", err)
+	}
 	log.Printf("storage ready at %s", *dbPath)
 
 	broker := chat.NewBroker()

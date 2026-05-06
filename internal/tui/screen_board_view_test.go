@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
@@ -112,5 +113,110 @@ func TestBoardView_BackKeys(t *testing.T) {
 				t.Errorf("To = %v, want ScreenBoardList", nav.To)
 			}
 		})
+	}
+}
+
+// Pressing 'b' with a non-empty banner navigates to the splash screen.
+// With an empty banner it must no-op (no NavigateMsg).
+func TestBoardView_BannerKey_NavigatesToSplash(t *testing.T) {
+	m, board, _ := newBoardViewFixture(t)
+	user := m.deps.User
+	if err := m.deps.Store.Boards().UpdateBanner(t.Context(), board.ID, user.ID, store.RoleAdmin, "art"); err != nil {
+		t.Fatalf("seed banner: %v", err)
+	}
+	// Reload model so it picks up the banner.
+	m = newBoardViewModel(m.deps, board.ID)
+	if m.board == nil || m.board.Banner == "" {
+		t.Fatalf("test setup: banner not loaded; got board=%v", m.board)
+	}
+
+	_, cmd := m.Update(keyOf("b"))
+	if cmd == nil {
+		t.Fatal("b: got nil cmd, want NavigateMsg cmd")
+	}
+	nav, ok := runCmd(cmd).(NavigateMsg)
+	if !ok {
+		t.Fatalf("b: got %T, want NavigateMsg", runCmd(cmd))
+	}
+	if nav.To != ScreenBoardSplash || nav.BoardID != board.ID {
+		t.Errorf("nav = %+v, want splash for board %d", nav, board.ID)
+	}
+}
+
+func TestBoardView_BannerKey_NoOpWhenEmpty(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	if m.board.Banner != "" {
+		t.Fatalf("test setup: expected empty banner; got %q", m.board.Banner)
+	}
+	_, cmd := m.Update(keyOf("b"))
+	if cmd != nil {
+		t.Errorf("b with empty banner: got cmd, want nil (no navigation)")
+	}
+}
+
+// 'B' opens the edit screen only for mod+. A regular user pressing B must
+// not navigate.
+func TestBoardView_BannerEditKey_GatedByRole(t *testing.T) {
+	cases := []struct {
+		role       store.Role
+		shouldNav  bool
+	}{
+		{store.RoleUser, false},
+		{store.RoleGuest, false},
+		{store.RoleMod, true},
+		{store.RoleAdmin, true},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.role), func(t *testing.T) {
+			m, board, _ := newBoardViewFixture(t)
+			// Promote the fixture user. Guest is special — it's the
+			// reserved guest account; we can just override the in-memory
+			// role for the predicate check (DB role doesn't matter for
+			// canEditBanner).
+			m.deps.User.Role = tc.role
+
+			_, cmd := m.Update(keyOf("B"))
+			if tc.shouldNav {
+				if cmd == nil {
+					t.Fatalf("%s: got nil cmd, want NavigateMsg", tc.role)
+				}
+				nav := runCmd(cmd).(NavigateMsg)
+				if nav.To != ScreenBoardBannerEdit || nav.BoardID != board.ID {
+					t.Errorf("%s: nav = %+v, want banner edit for board %d", tc.role, nav, board.ID)
+				}
+			} else if cmd != nil {
+				t.Errorf("%s: got cmd %v, want nil (denied)", tc.role, cmd)
+			}
+		})
+	}
+}
+
+// renderBanner produces no output when the board has no banner (won't
+// affect existing tests / layout).
+func TestBoardView_RenderBanner_Empty(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	if got := m.renderBanner(); got != "" {
+		t.Errorf("got %q, want empty", got)
+	}
+}
+
+// renderBanner caps to maxInlineBannerLines and tags overflow.
+func TestBoardView_RenderBanner_LongBannerTruncated(t *testing.T) {
+	m, board, _ := newBoardViewFixture(t)
+	user := m.deps.User
+	long := ""
+	for i := 0; i < maxInlineBannerLines+5; i++ {
+		long += "line\n"
+	}
+	if err := m.deps.Store.Boards().UpdateBanner(t.Context(), board.ID, user.ID, store.RoleAdmin, long); err != nil {
+		t.Fatalf("seed banner: %v", err)
+	}
+	m = newBoardViewModel(m.deps, board.ID)
+	m.width = 80
+
+	got := m.renderBanner()
+	// Must contain the overflow hint.
+	if !strings.Contains(got, "truncated") {
+		t.Errorf("expected truncation hint; got:\n%s", got)
 	}
 }

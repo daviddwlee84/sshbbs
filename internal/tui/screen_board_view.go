@@ -80,6 +80,20 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{To: ScreenPostCompose, BoardID: m.board.ID}
 			}
+		case "b":
+			if m.board == nil || m.board.Banner == "" {
+				return m, nil
+			}
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenBoardSplash, BoardID: m.board.ID}
+			}
+		case "B":
+			if m.board == nil || !m.canEditBanner() {
+				return m, nil
+			}
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenBoardBannerEdit, BoardID: m.board.ID}
+			}
 		}
 	}
 	return m, nil
@@ -94,6 +108,7 @@ func (m boardViewModel) View() string {
 		b.WriteString(StyleHeader.Render(" 看板 "))
 	}
 	b.WriteString("\n\n")
+	b.WriteString(m.renderBanner())
 
 	if m.loadErr != nil {
 		b.WriteString("  " + StyleError.Render("⚠ "+m.loadErr.Error()) + "\n")
@@ -106,6 +121,7 @@ func (m boardViewModel) View() string {
 			hint = "(no articles yet)"
 			help = "Esc/←/h back · Ctrl+C disconnect"
 		}
+		help = m.appendBannerHelp(help)
 		b.WriteString("  " + StyleDim.Render(hint) + "\n")
 		b.WriteString("\n  " + StyleHelp.Render(help))
 		return b.String()
@@ -155,6 +171,7 @@ func (m boardViewModel) View() string {
 	if m.isGuest() {
 		help = "↑/↓ j/k move · Enter/→/l open · Esc/←/h back · Ctrl+C disconnect"
 	}
+	help = m.appendBannerHelp(help)
 	b.WriteString("\n  " + StyleHelp.Render(help))
 	b.WriteString("\n")
 	return b.String()
@@ -162,4 +179,58 @@ func (m boardViewModel) View() string {
 
 func (m boardViewModel) isGuest() bool {
 	return m.deps.User != nil && m.deps.User.Role == store.RoleGuest
+}
+
+func (m boardViewModel) canEditBanner() bool {
+	return m.deps.User != nil && m.deps.User.Role.AtLeast(store.RoleMod)
+}
+
+// appendBannerHelp tacks "b banner" / "B edit" hints onto a help-line
+// only when relevant: `b` requires a non-empty banner; `B` requires mod+.
+// Order matches the existing pattern (action keys before navigation).
+func (m boardViewModel) appendBannerHelp(help string) string {
+	if m.board != nil && m.board.Banner != "" {
+		help += " · b banner"
+	}
+	if m.canEditBanner() {
+		help += " · B edit"
+	}
+	return help
+}
+
+const maxInlineBannerLines = 8
+
+// renderBanner produces the inline banner block shown above the article
+// list. Empty string when the board has no banner. Each line is
+// ANSI-aware-truncated to the viewport width with a 2-space left margin;
+// the block is capped at maxInlineBannerLines with a "(press b)" hint
+// when the source has more.
+func (m boardViewModel) renderBanner() string {
+	if m.board == nil || m.board.Banner == "" {
+		return ""
+	}
+	width := m.width - 2
+	if width < 20 {
+		// Before the first WindowSizeMsg lands m.width is 0; fall back to a
+		// generous default so the banner doesn't render as a single column.
+		width = 78
+	}
+	lines := strings.Split(strings.TrimRight(m.board.Banner, "\n"), "\n")
+	limit := maxInlineBannerLines
+	truncated := false
+	if len(lines) > limit {
+		lines = lines[:limit]
+		truncated = true
+	}
+	var out strings.Builder
+	for _, line := range lines {
+		out.WriteString("  ")
+		out.WriteString(bannerTruncate(line, width))
+		out.WriteString("\n")
+	}
+	if truncated {
+		out.WriteString("  " + StyleDim.Render("…(banner truncated — press b for full view)") + "\n")
+	}
+	out.WriteString("\n")
+	return out.String()
 }

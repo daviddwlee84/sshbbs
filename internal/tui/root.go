@@ -179,6 +179,10 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newArticleEditModel(m.deps, n.ArticleID)
 	case ScreenArticleExport:
 		sub = newArticleExportModel(m.deps, n.ArticleID)
+	case ScreenBoardSplash:
+		sub = newBoardSplashModel(m.deps, n.BoardID)
+	case ScreenBoardBannerEdit:
+		sub = newBoardBannerEditModel(m.deps, n.BoardID)
 	default:
 		// Unknown screen — leave sub untouched. Later steps add cases.
 		return m, nil
