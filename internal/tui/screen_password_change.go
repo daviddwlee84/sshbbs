@@ -10,7 +10,13 @@ import (
 	"github.com/daviddwlee84/sshbbs/internal/auth"
 )
 
-// Form-style screen routed from Root when deps.MustChangePassword is set.
+// Form-style screen reachable in two modes:
+//
+//   - Forced rotation: routed from Root when deps.MustChangePassword is set.
+//     Esc disconnects (re-login lands on the same screen).
+//   - Voluntary change: navigated from the user-settings menu. Esc returns
+//     to the menu instead of quitting.
+//
 // Like screen_register, it deliberately does NOT bind h/l so those keys
 // remain available for text editing inside the password fields.
 
@@ -55,14 +61,25 @@ func (m passwordChangeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.success {
-			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+			// Voluntary change → back to the settings menu so the user
+			// can carry on tweaking other things. Forced rotation → main
+			// menu (the entry point post-rotation).
+			to := ScreenMainMenu
+			if !m.deps.MustChangePassword {
+				to = ScreenUserSettings
+			}
+			return m, func() tea.Msg { return NavigateMsg{To: to} }
 		}
 		switch msg.String() {
 		case "esc":
-			// Refusing to set a new password is allowed but ends the session;
-			// the must_change flag is still set, so reconnecting just lands
-			// back on this screen. Cleaner than letting the user limbo on a
-			// screen they refused.
+			// Voluntary mode (entered via 個人設定): Esc returns to the
+			// settings menu. Forced-rotation mode: Esc disconnects — the
+			// must_change flag is still set, so reconnecting just lands
+			// back on this screen. Cleaner than letting the user limbo on
+			// a screen they refused.
+			if !m.deps.MustChangePassword {
+				return m, func() tea.Msg { return NavigateMsg{To: ScreenUserSettings} }
+			}
 			return m, tea.Quit
 		case "tab", "down":
 			m.advance(+1)
@@ -137,13 +154,21 @@ func (m passwordChangeModel) submit() (tea.Model, tea.Cmd) {
 		*m.deps.User = *fresh
 	}
 	m.success = true
-	return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+	to := ScreenMainMenu
+	if !m.deps.MustChangePassword {
+		to = ScreenUserSettings
+	}
+	return m, func() tea.Msg { return NavigateMsg{To: to} }
 }
 
 func (m passwordChangeModel) View() string {
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render("  === 修改密碼 (首次登入必須修改) ==="))
+	if m.deps.MustChangePassword {
+		b.WriteString(StyleHeader.Render("  === 修改密碼 (首次登入必須修改) ==="))
+	} else {
+		b.WriteString(StyleHeader.Render("  === 修改密碼 Change password ==="))
+	}
 	b.WriteString("\n\n")
 
 	labels := []string{"目前密碼 current", "新密碼 new (≥ 6)", "再次輸入 confirm"}
@@ -158,9 +183,17 @@ func (m passwordChangeModel) View() string {
 		b.WriteString("  " + StyleError.Render("⚠ "+m.err) + "\n\n")
 	}
 	if m.success {
-		b.WriteString("  " + StyleSuccess.Render("✓ 已更新，將進入主選單…") + "\n\n")
+		if m.deps.MustChangePassword {
+			b.WriteString("  " + StyleSuccess.Render("✓ 已更新，將進入主選單…") + "\n\n")
+		} else {
+			b.WriteString("  " + StyleSuccess.Render("✓ 已更新") + "\n\n")
+		}
 	}
-	b.WriteString("  " + StyleHelp.Render("Tab/↓ next · Shift+Tab/↑ prev · Enter submit · Esc disconnect"))
+	escHint := "Esc disconnect"
+	if !m.deps.MustChangePassword {
+		escHint = "Esc back"
+	}
+	b.WriteString("  " + StyleHelp.Render("Tab/↓ next · Shift+Tab/↑ prev · Enter submit · "+escHint))
 	b.WriteString("\n")
 	return b.String()
 }

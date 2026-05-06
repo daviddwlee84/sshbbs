@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -312,6 +313,19 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{To: ScreenArticleExport, ArticleID: id, BoardID: boardID}
 			}
+		case "r":
+			// Reply — opens the post-compose screen with the parent
+			// pre-filled (Re: title + blockquote body), same flow as mail
+			// reply. Guests can't reply (gated by guestWriteBlocked in
+			// Root.navigate).
+			if m.article == nil {
+				return m, nil
+			}
+			id := m.article.ID
+			boardID := m.article.BoardID
+			return m, func() tea.Msg {
+				return NavigateMsg{To: ScreenPostCompose, ArticleID: id, BoardID: boardID}
+			}
 		case "M":
 			// Open the comments-mode picker. Mod+ only — silent no-op
 			// otherwise so non-mods don't get a confusing toast for a key
@@ -520,6 +534,17 @@ func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Body:       body,
 			})
 		}
+		// Webhook notification to the article's author. Skip self-pushes
+		// — pushing on your own article doesn't need to wake your phone.
+		if m.deps.Notify != nil && m.article.AuthorID != u.ID {
+			m.deps.Notify.Dispatch(notify.Event{
+				Kind:       notify.KindPush,
+				ToUserID:   m.article.AuthorID,
+				FromUserID: u.UserID,
+				Title:      fmt.Sprintf("[BBS] %s %s 了你的文章", u.UserID, kindLabel(m.pushKind)),
+				Body:       fmt.Sprintf("%s\n\n%s", Truncate(m.article.Title, 60), body),
+			})
+		}
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -611,7 +636,7 @@ func (m articleViewModel) View() string {
 	} else {
 		help := "j/k scroll · y 匯出"
 		if m.canPush() {
-			help += " · + 推 · - 噓 · = →"
+			help += " · + 推 · - 噓 · = → · r 回文"
 		}
 		if len(m.pushes) > 0 {
 			help += " · p/P 選推文"
@@ -645,6 +670,21 @@ func renderPushKind(k store.PushKind) string {
 		return StyleBooKind.Render("噓")
 	case store.PushKindArrow:
 		return StyleArrowKind.Render("→")
+	}
+	return "?"
+}
+
+// kindLabel renders a short verb for push notifications. Mirrors the
+// renderPushKind glyphs (推 / 噓 / →) but as plain text so it survives
+// non-color webhooks (Discord embeds, plain SMS, etc.).
+func kindLabel(k store.PushKind) string {
+	switch k {
+	case store.PushKindPush:
+		return "推"
+	case store.PushKindBoo:
+		return "噓"
+	case store.PushKindArrow:
+		return "→"
 	}
 	return "?"
 }

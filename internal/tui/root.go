@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -15,8 +16,9 @@ import (
 // constructors keeps screens self-contained.
 type Deps struct {
 	Store              *store.Store
-	Broker             *chat.Broker // nil during register
-	User               *store.User  // nil iff IsRegister
+	Broker             *chat.Broker    // nil during register
+	Notify             *notify.Manager // may be nil in tests; call sites must guard
+	User               *store.User     // nil iff IsRegister
 	IsRegister         bool
 	MustChangePassword bool // true iff user must rotate password before reaching the main menu
 }
@@ -197,7 +199,10 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 	case ScreenArticleView:
 		sub = newArticleViewModel(m.deps, n.ArticleID)
 	case ScreenPostCompose:
-		sub = newPostComposeModel(m.deps, n.BoardID)
+		// n.ArticleID, when non-zero, identifies the parent article — this
+		// path is the "Re: reply" target. screen_article_view's R key sets
+		// it; new-post entry points (e.g., board view's `p` key) leave it 0.
+		sub = newPostComposeModel(m.deps, n.BoardID, n.ArticleID)
 	case ScreenWBInbox:
 		sub = newWBInboxModel(m.deps)
 	case ScreenWBCompose:
@@ -224,6 +229,12 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		sub = newBoardSplashModel(m.deps, n.BoardID)
 	case ScreenBoardBannerEdit:
 		sub = newBoardBannerEditModel(m.deps, n.BoardID)
+	case ScreenUserSettings:
+		sub = newUserSettingsModel(m.deps)
+	case ScreenBioEdit:
+		sub = newBioEditModel(m.deps)
+	case ScreenNotifySettings:
+		sub = newNotifySettingsModel(m.deps)
 	default:
 		// Unknown screen — leave sub untouched. Later steps add cases.
 		return m, nil

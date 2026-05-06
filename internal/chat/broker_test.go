@@ -47,6 +47,25 @@ func TestBroker_RegisterAppearsOnline(t *testing.T) {
 	}
 }
 
+func TestBroker_IsOnline(t *testing.T) {
+	b := chat.NewBroker()
+	if b.IsOnline(1) {
+		t.Errorf("IsOnline(1) before register = true, want false")
+	}
+	s := newFake(1)
+	b.Register(&chat.Session{UserID: 1, UserIDStr: "alice", Program: s})
+	if !b.IsOnline(1) {
+		t.Errorf("IsOnline(1) after register = false, want true")
+	}
+	if b.IsOnline(2) {
+		t.Errorf("IsOnline(2) (other user) = true, want false")
+	}
+	b.Unregister(1, s)
+	if b.IsOnline(1) {
+		t.Errorf("IsOnline(1) after unregister = true, want false")
+	}
+}
+
 func TestBroker_UnregisterRemoves(t *testing.T) {
 	b := chat.NewBroker()
 	s := newFake(1)

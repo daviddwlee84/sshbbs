@@ -277,6 +277,7 @@ func (m wbComposeModel) submit() (tea.Model, tea.Cmd) {
 			// The recipient saw it live, so we can mark it read immediately.
 			_ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID)
 		}
+		notifyWB(m.deps, target.ID, from.UserID, body)
 	}
 	m.sent = target.UserID
 	return m, nil
@@ -491,6 +492,7 @@ func (m wbThreadModel) submit() (tea.Model, tea.Cmd) {
 		if delivered {
 			_ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID)
 		}
+		notifyWB(m.deps, m.cpID, from.UserID, body)
 	}
 	m.items = append(m.items, wb)
 	m.input.SetValue("")

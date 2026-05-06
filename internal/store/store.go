@@ -24,6 +24,7 @@ type Store struct {
 	pushes         *PushRepo
 	waterBalloons  *WaterBalloonRepo
 	mail           *MailRepo
+	notify         *NotifyRepo
 }
 
 func Open(path string) (*Store, error) {
@@ -51,6 +52,7 @@ func Open(path string) (*Store, error) {
 	s.pushes = &PushRepo{s: s}
 	s.waterBalloons = &WaterBalloonRepo{s: s}
 	s.mail = &MailRepo{s: s}
+	s.notify = &NotifyRepo{s: s}
 	return s, nil
 }
 
@@ -66,3 +68,4 @@ func (s *Store) Articles() *ArticleRepo           { return s.articles }
 func (s *Store) Pushes() *PushRepo                { return s.pushes }
 func (s *Store) WaterBalloons() *WaterBalloonRepo { return s.waterBalloons }
 func (s *Store) Mail() *MailRepo                  { return s.mail }
+func (s *Store) Notify() *NotifyRepo               { return s.notify }

@@ -607,6 +607,27 @@ func TestArticleView_YOpensExport(t *testing.T) {
 	}
 }
 
+// `r` opens the post-compose screen with the parent article id set, so
+// the receiver can pre-fill "Re: " title and quoted body.
+func TestArticleView_ROpensReplyCompose(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	_, cmd := m.Update(keyOf("r"))
+	nav, ok := runCmd(cmd).(NavigateMsg)
+	if !ok {
+		t.Fatalf("got non-NavigateMsg")
+	}
+	if nav.To != ScreenPostCompose {
+		t.Errorf("To = %v, want ScreenPostCompose", nav.To)
+	}
+	if nav.ArticleID != art.ID {
+		t.Errorf("ArticleID (parent) = %d, want %d", nav.ArticleID, art.ID)
+	}
+	if nav.BoardID != art.BoardID {
+		t.Errorf("BoardID = %d, want %d", nav.BoardID, art.BoardID)
+	}
+}
+
 func TestArticleView_AcceptsArticleUpdated(t *testing.T) {
 	deps, art := seedArticle(t)
 	m := newArticleViewModel(deps, art.ID)

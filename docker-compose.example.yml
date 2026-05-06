@@ -1,0 +1,41 @@
+# Example docker-compose for SSH-BBS + per-user webhook notifications.
+#
+# Brings up two services:
+#   apprise — caronc/apprise-api, the webhook fan-out for 100+ services
+#             (Discord, Telegram, email, Slack, ntfy.sh, …). Stores
+#             notification URLs under named "config keys".
+#   bbs     — this BBS, listening on :2222 for SSH.
+#
+# After `docker compose -f docker-compose.example.yml up -d`:
+#   1. Add your apprise URLs under a config key, e.g.:
+#        curl -X POST http://localhost:8000/add/mykey \
+#          -H 'Content-Type: application/json' \
+#          -d '{"urls": "discord://webhook_id/webhook_token"}'
+#   2. SSH in, register a user, then 個人設定 → 通知設定 → Add target:
+#        http://apprise:8000/notify/mykey
+#      (Use the service name `apprise` inside the docker network; from
+#      your host it's http://localhost:8000/notify/mykey instead.)
+#
+# See docs/notifications.md for the full architecture & troubleshooting.
+
+services:
+  apprise:
+    image: caronc/apprise:latest
+    container_name: bbs-apprise
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apprise/config:/config
+    restart: unless-stopped
+
+  bbs:
+    build: .
+    container_name: bbs
+    ports:
+      - "2222:2222"
+    volumes:
+      - ./data:/app/data
+      - ./.ssh:/app/.ssh
+    depends_on:
+      - apprise
+    restart: unless-stopped

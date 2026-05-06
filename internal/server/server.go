@@ -16,6 +16,7 @@ import (
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 	"github.com/daviddwlee84/sshbbs/internal/tui"
 )
@@ -25,14 +26,14 @@ type Config struct {
 	HostKey string
 }
 
-func New(cfg Config, st *store.Store, broker *chat.Broker) (*ssh.Server, error) {
+func New(cfg Config, st *store.Store, broker *chat.Broker, notifyMgr *notify.Manager) (*ssh.Server, error) {
 	return wish.NewServer(
 		wish.WithAddress(cfg.Addr),
 		wish.WithHostKeyPath(cfg.HostKey),
 		wish.WithPasswordAuth(PasswordAuth(st)),
 		withReservedNoneAuth(),
 		wish.WithMiddleware(
-			bubbletea.MiddlewareWithProgramHandler(makeProgramHandler(st, broker), termenv.ANSI256),
+			bubbletea.MiddlewareWithProgramHandler(makeProgramHandler(st, broker, notifyMgr), termenv.ANSI256),
 			activeterm.Middleware(),
 			logging.Middleware(),
 		),
@@ -73,7 +74,7 @@ func withReservedNoneAuth() ssh.Option {
 // makeProgramHandler is the wish ProgramHandler. It owns *tea.Program
 // creation so we can hand the pointer to the chat broker for live message
 // delivery, and arrange Unregister when the SSH session ends.
-func makeProgramHandler(st *store.Store, broker *chat.Broker) bubbletea.ProgramHandler {
+func makeProgramHandler(st *store.Store, broker *chat.Broker, notifyMgr *notify.Manager) bubbletea.ProgramHandler {
 	return func(sess ssh.Session) *tea.Program {
 		ctx := sess.Context()
 
@@ -83,7 +84,7 @@ func makeProgramHandler(st *store.Store, broker *chat.Broker) bubbletea.ProgramH
 		// sess.User() directly.
 		reg, _ := ctx.Value(ctxKeyRegister).(bool)
 		if reg || sess.User() == auth.ReservedUsernameNew {
-			deps := tui.Deps{Store: st, Broker: broker, IsRegister: true}
+			deps := tui.Deps{Store: st, Broker: broker, Notify: notifyMgr, IsRegister: true}
 			m := tui.NewRoot(deps)
 			return tea.NewProgram(m, append(bubbletea.MakeOptions(sess), tea.WithAltScreen())...)
 		}
@@ -111,7 +112,7 @@ func makeProgramHandler(st *store.Store, broker *chat.Broker) bubbletea.ProgramH
 			return nil
 		}
 
-		deps := tui.Deps{Store: st, User: user, Broker: broker}
+		deps := tui.Deps{Store: st, User: user, Broker: broker, Notify: notifyMgr}
 		if user.MustChangePassword {
 			deps.MustChangePassword = true
 		}

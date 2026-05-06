@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,7 +31,7 @@ func TestPostCompose_SubmitBroadcastsArticleAdded(t *testing.T) {
 	br.Register(&chat.Session{UserID: bob.ID, UserIDStr: bob.UserID, Program: bobRec})
 
 	deps := Deps{Store: st, User: alice, Broker: br}
-	m := newPostComposeModel(deps, board.ID)
+	m := newPostComposeModel(deps, board.ID, 0)
 	m.title.SetValue("hello")
 	m.body.SetValue("body line")
 
@@ -76,7 +77,7 @@ func TestPostCompose_CtrlIImportsFrontmatter(t *testing.T) {
 	alice := storetest.MustUser(t, st, "alice", "")
 	board := storetest.MustBoard(t, st, "Test")
 	deps := Deps{Store: st, User: alice, Broker: chat.NewBroker()}
-	m := newPostComposeModel(deps, board.ID)
+	m := newPostComposeModel(deps, board.ID, 0)
 	m.body.SetValue("---\ntitle: Imported\nboard: Welcome\n---\n\nhello world\n")
 
 	m.importFromBody()
@@ -97,7 +98,7 @@ func TestPostCompose_CtrlIWithoutFrontmatterErrors(t *testing.T) {
 	alice := storetest.MustUser(t, st, "alice", "")
 	board := storetest.MustBoard(t, st, "Test")
 	deps := Deps{Store: st, User: alice, Broker: chat.NewBroker()}
-	m := newPostComposeModel(deps, board.ID)
+	m := newPostComposeModel(deps, board.ID, 0)
 	m.body.SetValue("just plain text without any frontmatter")
 
 	m.importFromBody()
@@ -107,6 +108,47 @@ func TestPostCompose_CtrlIWithoutFrontmatterErrors(t *testing.T) {
 	}
 	if m.title.Value() != "" {
 		t.Errorf("title was changed despite parse failure: %q", m.title.Value())
+	}
+}
+
+// Reply mode: passing parentArticleID prefills the title with "Re: " and
+// the body with a markdown blockquote of the parent. Subsequent replies
+// don't stack "Re: Re:".
+func TestPostCompose_ReplyPrefillsTitleAndBody(t *testing.T) {
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	parent, err := st.Articles().Create(context.Background(), board.ID, alice.ID, alice.UserID, "Hello world", "first line\nsecond line")
+	if err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+
+	bob := storetest.MustUser(t, st, "bob", "")
+	deps := Deps{Store: st, User: bob}
+	m := newPostComposeModel(deps, board.ID, parent.ID)
+
+	if got, want := m.title.Value(), "Re: Hello world"; got != want {
+		t.Errorf("title = %q, want %q", got, want)
+	}
+	body := m.body.Value()
+	if !strings.Contains(body, "alice") {
+		t.Errorf("body missing parent author: %q", body)
+	}
+	if !strings.Contains(body, "> first line") {
+		t.Errorf("body missing quoted first line: %q", body)
+	}
+	if !strings.Contains(body, "> second line") {
+		t.Errorf("body missing quoted second line: %q", body)
+	}
+	if m.parent == nil || m.parent.ID != parent.ID {
+		t.Errorf("parent not loaded: %+v", m.parent)
+	}
+
+	// "Re: Re: Hello" must collapse to "Re: Hello".
+	parent2, _ := st.Articles().Create(context.Background(), board.ID, alice.ID, alice.UserID, "Re: Hi", "x")
+	m2 := newPostComposeModel(deps, board.ID, parent2.ID)
+	if got, want := m2.title.Value(), "Re: Hi"; got != want {
+		t.Errorf("title (re-of-re) = %q, want %q", got, want)
 	}
 }
 
@@ -120,7 +162,7 @@ func TestPostCompose_EmptyFieldsDoNotSubmit(t *testing.T) {
 	br.Register(&chat.Session{UserID: 99, UserIDStr: "carol", Program: rec})
 
 	deps := Deps{Store: st, User: alice, Broker: br}
-	m := newPostComposeModel(deps, board.ID)
+	m := newPostComposeModel(deps, board.ID, 0)
 	m.title.SetValue("")
 	m.body.SetValue("body")
 

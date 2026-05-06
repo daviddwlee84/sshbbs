@@ -73,6 +73,7 @@ var screenHelp = map[Screen][]helpSection{
 			{"g/G", "top / bottom"},
 			{"PgUp/PgDn", "page scroll (b/space aliases)"},
 			{"+ / - / =", "推 / 噓 / → (non-guest)"},
+			{"r", "reply (Re:) — opens compose with parent quoted"},
 			{"p / P", "select push for delete"},
 			{"D", "delete cursored article or push (owner / mod+)"},
 			{"E", "edit article (author / mod+)"},
@@ -145,6 +146,29 @@ var screenHelp = map[Screen][]helpSection{
 			{"Q", "back to main menu"},
 		},
 	}},
+	ScreenUserSettings: {{
+		Heading: "User settings",
+		Entries: []HelpEntry{
+			{"↑/↓ j/k", "move cursor"},
+			{"Enter/→/l", "open sub-screen"},
+			{"1-4", "jump to numbered slot"},
+			{"Esc/←/h q", "back to main menu"},
+		},
+	}},
+	ScreenNotifySettings: {{
+		Heading: "Notification settings",
+		Entries: []HelpEntry{
+			{"↑/↓ j/k", "move cursor (toggles + targets + add)"},
+			{"Space", "flip pref / toggle target enabled"},
+			{"Ctrl+S", "save event toggles"},
+			{"a", "add new webhook target"},
+			{"e", "edit cursored target"},
+			{"t", "toggle cursored target enabled"},
+			{"d", "delete cursored target"},
+			{"Esc/←/h", "back to user settings"},
+			{"Q", "back to main menu"},
+		},
+	}},
 	ScreenAdminUsers: {{
 		Heading: "Admin: users",
 		Entries: []HelpEntry{
@@ -192,7 +216,8 @@ func isFormScreen(s Screen) bool {
 		ScreenMailCompose,
 		ScreenArticleEdit,
 		ScreenBoardBannerEdit,
-		ScreenPasswordChange:
+		ScreenPasswordChange,
+		ScreenBioEdit:
 		return true
 	}
 	return false

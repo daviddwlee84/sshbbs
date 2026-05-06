@@ -81,6 +81,15 @@ payload — that way timestamps and `recommend_score` are always canonical.
 Water balloons (`broker.Send(toUID, ...)`) target a single user; the
 multi-session "雙開" case fans out to every live `Session` of that user.
 
+### Per-user webhook notifications go through `internal/notify`
+`notify.Manager` runs a tiny worker pool that POSTs `{title, body}` JSON
+to user-configured webhook URLs. Call-sites (push / WB / mail / Re:)
+invoke `Dispatch` (non-blocking, drops on full buffer). The BBS
+deliberately does NOT parse `apprise://` URLs — operators run
+`caronc/apprise-api` as a docker sidecar and the BBS just POSTs to
+`http://apprise:8000/notify/<key>`. Architecture rationale +
+deployment recipe: `docs/notifications.md`.
+
 ### `Store.writeMu` is process-level, not row-level
 `internal/store/store.go` exposes a single `sync.Mutex` that's grabbed
 inside every multi-statement repo method (e.g. `PushRepo.Create` runs
@@ -133,7 +142,10 @@ The full mapping (userec_t / boardheader_t / fileheader_t / `.DIR` /
   for double-width glyphs.
 - **Form screens skip h/l navigation** so the keys remain available for
   text editing. Currently: `screen_register`, `screen_post_compose`,
-  `screen_wb` (compose half).
+  `screen_wb` (compose half), `screen_bio_edit`, `screen_password_change`.
+  The canonical list lives in `tui.isFormScreen` (`internal/tui/help.go`)
+  — adding a new form screen means appending it there too so `?` passes
+  through to textinput as a literal character.
 - **NavigateMsg is the only legitimate way to swap screens.** Sub-models
   emit it from `Update`; `Root.navigate` is the single switch statement
   that constructs the new sub. When you add a new screen, add the case

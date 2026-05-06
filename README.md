@@ -18,8 +18,13 @@ Implements the MUST-HAVE feature set of the planning doc:
 - Default boards: `Welcome`, `Test`, `ChitChat`
 - Read & post articles (UTF-8, CJK-aware widths via `go-runewidth`)
 - 推文 (推 / 噓 / →) with live broadcast to other viewers of the same article
+- 文章 `r` 回文 (Re:) — quoted reply preserves an email-style thread
 - 水球 (water balloons) — private one-line messages with offline persistence
   and on-reconnect replay
+- 個人設定: change password, edit bio, configure per-event webhook
+  notifications (push / wb / mail / reply) — see
+  [`docs/notifications.md`](docs/notifications.md) for the recommended
+  caronc/apprise-api docker-compose recipe
 
 ## Quickstart
 

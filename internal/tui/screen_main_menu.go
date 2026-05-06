@@ -27,6 +27,7 @@ func newMainMenuModel(deps Deps) mainMenuModel {
 		{label: "水球 Water Balloons", hint: "private messages with online users", to: ScreenWBInbox},
 		{label: "線上使用者 Online", hint: "see who's logged in", to: ScreenOnline},
 		{label: "信箱 Mail", hint: "persistent threaded mail", to: ScreenMailInbox},
+		{label: "個人設定 User settings", hint: "password / bio / notifications", to: ScreenUserSettings},
 	}
 	// Admin gets an extra entry; positioned before the Quit row so the
 	// numeric shortcut for Quit always lands on the LAST item regardless
@@ -65,7 +66,7 @@ func (m mainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, func() tea.Msg { return NavigateMsg{To: it.to} }
-		case "1", "2", "3", "4", "5", "6":
+		case "1", "2", "3", "4", "5", "6", "7":
 			idx := int(k.String()[0] - '1')
 			if idx < len(m.items) {
 				it := m.items[idx]

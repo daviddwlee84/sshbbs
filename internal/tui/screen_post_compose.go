@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -9,6 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/markdown"
+	"github.com/daviddwlee84/sshbbs/internal/notify"
+	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
 const (
@@ -17,17 +20,19 @@ const (
 )
 
 type postComposeModel struct {
-	deps    Deps
-	boardID int64
-	title   textinput.Model
-	body    textarea.Model
-	focus   int
-	width   int
-	height  int
-	err     string
+	deps     Deps
+	boardID  int64
+	parentID int64 // 0 = new post; non-zero = Re: reply to that article
+	parent   *store.Article
+	title    textinput.Model
+	body     textarea.Model
+	focus    int
+	width    int
+	height   int
+	err      string
 }
 
-func newPostComposeModel(deps Deps, boardID int64) postComposeModel {
+func newPostComposeModel(deps Deps, boardID, parentID int64) postComposeModel {
 	ti := textinput.New()
 	ti.Placeholder = "標題 title"
 	ti.CharLimit = 64
@@ -40,13 +45,69 @@ func newPostComposeModel(deps Deps, boardID int64) postComposeModel {
 	ta.SetWidth(72)
 	ta.SetHeight(12)
 
-	return postComposeModel{
-		deps:    deps,
-		boardID: boardID,
-		title:   ti,
-		body:    ta,
-		focus:   composeFocusTitle,
+	m := postComposeModel{
+		deps:     deps,
+		boardID:  boardID,
+		parentID: parentID,
+		title:    ti,
+		body:     ta,
+		focus:    composeFocusTitle,
 	}
+
+	// Reply mode: pull the parent article and pre-fill the title with "Re: "
+	// (collapsing duplicates) and the body with a markdown blockquote of the
+	// parent — same shape as mail reply (see quoteForReply in screen_mail.go).
+	// Fall through to a blank compose if the parent has gone missing.
+	if parentID != 0 && deps.Store != nil {
+		if parent, err := deps.Store.Articles().GetByID(context.Background(), parentID); err == nil {
+			m.parent = parent
+			// boardID may have been passed as 0 by the caller (article-view
+			// only knows the parent ID); fill it from the parent record so
+			// the reply lands on the same board as the original.
+			if m.boardID == 0 {
+				m.boardID = parent.BoardID
+			}
+			m.title.SetValue(rePrefix(parent.Title))
+			m.body.SetValue(quoteArticleForReply(parent))
+			// Land focus on the body so the user can start typing the reply
+			// straight away — the prefilled title is usually fine as-is.
+			m.title.Blur()
+			m.body.Focus()
+			m.focus = composeFocusBody
+		}
+	}
+	return m
+}
+
+// rePrefix prepends "Re: " to the parent title, collapsing existing "Re: "
+// runs so a long thread doesn't grow "Re: Re: Re: Hi".
+func rePrefix(title string) string {
+	t := strings.TrimSpace(title)
+	for {
+		if strings.HasPrefix(strings.ToLower(t), "re:") {
+			t = strings.TrimSpace(t[3:])
+			continue
+		}
+		break
+	}
+	return "Re: " + t
+}
+
+// quoteArticleForReply renders the parent article as a markdown blockquote
+// suitable for pre-filling a reply body. Mirrors mail's quoteForReply.
+func quoteArticleForReply(parent *store.Article) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "> %s · %s 寫道:\n>\n",
+		parent.AuthorUserID,
+		parent.CreatedAt.Format("2006-01-02 15:04"),
+	)
+	for _, line := range strings.Split(parent.Body, "\n") {
+		b.WriteString("> ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 func (m postComposeModel) Init() tea.Cmd { return textinput.Blink }
@@ -164,13 +225,32 @@ func (m postComposeModel) submit() (tea.Model, tea.Cmd) {
 			Title:        art.Title,
 		})
 	}
+	// Reply notification: when the post is a Re: reply to someone else's
+	// article, fan out to that author's webhook targets so they hear about
+	// it even when offline. Self-reply (replying to your own article) is
+	// silenced — the user already saw their own action.
+	if m.parent != nil && m.deps.Notify != nil && m.parent.AuthorID != u.ID {
+		m.deps.Notify.Dispatch(notify.Event{
+			Kind:       notify.KindReply,
+			ToUserID:   m.parent.AuthorID,
+			FromUserID: u.UserID,
+			Title:      fmt.Sprintf("[BBS] %s 回了你的文章", u.UserID),
+			Body:       fmt.Sprintf("%s\n\n原文: %s", title, Truncate(m.parent.Title, 60)),
+		})
+	}
 	return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardView, BoardID: m.boardID} }
 }
 
 func (m postComposeModel) View() string {
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 發表新文章 New Post "))
+	if m.parent != nil {
+		b.WriteString(StyleHeader.Render(" 回文 Reply "))
+		b.WriteString("\n  " + StyleDim.Render(fmt.Sprintf("回覆 #%d  %s · %s",
+			m.parent.ID, m.parent.AuthorUserID, m.parent.Title)))
+	} else {
+		b.WriteString(StyleHeader.Render(" 發表新文章 New Post "))
+	}
 	b.WriteString("\n\n")
 
 	b.WriteString("  " + StyleDim.Render("Title:") + "\n")

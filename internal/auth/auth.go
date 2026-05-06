@@ -37,6 +37,7 @@ const (
 	maxPasswordLen = 128
 	maxNickname    = 32
 	maxEmail       = 128
+	maxBio         = 1024
 )
 
 var (
@@ -45,6 +46,7 @@ var (
 	ErrInvalidPassword  = fmt.Errorf("password must be %d-%d characters", minPasswordLen, maxPasswordLen)
 	ErrNicknameTooLong  = fmt.Errorf("nickname must be %d characters or fewer", maxNickname)
 	ErrEmailTooLong     = fmt.Errorf("email must be %d characters or fewer", maxEmail)
+	ErrBioTooLong       = fmt.Errorf("bio must be %d characters or fewer", maxBio)
 	ErrReservedUsername = fmt.Errorf("user id is reserved (%q / %q / %q)",
 		ReservedUsernameNew, ReservedUsernameGuest, ReservedUsernameAdmin)
 	ErrBadCredentials   = errors.New("invalid user id or password")
@@ -57,6 +59,15 @@ var userIDRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{2,11}$`)
 func ValidatePassword(password string) error {
 	if l := len(password); l < minPasswordLen || l > maxPasswordLen {
 		return ErrInvalidPassword
+	}
+	return nil
+}
+
+// ValidateBio enforces the bio length rule. Newlines are allowed; the
+// limit is on rune count so CJK glyphs aren't penalised against ASCII.
+func ValidateBio(bio string) error {
+	if len([]rune(bio)) > maxBio {
+		return ErrBioTooLong
 	}
 	return nil
 }

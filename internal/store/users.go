@@ -21,6 +21,7 @@ type User struct {
 	CreatedAt          time.Time
 	Role               Role
 	MustChangePassword bool
+	Bio                string
 }
 
 type UserRepo struct{ s *Store }
@@ -31,7 +32,7 @@ var (
 )
 
 const userColumns = `id, user_id, password_hash, nickname, realname, email,
-	num_logins, num_posts, last_login_at, last_host, created_at, role, must_change_password`
+	num_logins, num_posts, last_login_at, last_host, created_at, role, must_change_password, bio`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
@@ -39,7 +40,7 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	err := row.Scan(
 		&u.ID, &u.UserID, &u.PasswordHash, &u.Nickname, &u.RealName, &u.Email,
 		&u.NumLogins, &u.NumPosts, &u.LastLoginAt, &u.LastHost, &u.CreatedAt,
-		&u.Role, &mustChange,
+		&u.Role, &mustChange, &u.Bio,
 	)
 	u.MustChangePassword = mustChange != 0
 	return u, err
@@ -132,6 +133,17 @@ func (r *UserRepo) SetPassword(ctx context.Context, id int64, passwordHash strin
 	_, err := r.s.db.ExecContext(ctx,
 		`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`,
 		passwordHash, id,
+	)
+	return err
+}
+
+// SetBio updates the user's profile bio. Callers (the bio-edit screen) are
+// responsible for length validation via auth.ValidateBio.
+func (r *UserRepo) SetBio(ctx context.Context, id int64, bio string) error {
+	r.s.writeMu.Lock()
+	defer r.s.writeMu.Unlock()
+	_, err := r.s.db.ExecContext(ctx,
+		`UPDATE users SET bio = ? WHERE id = ?`, bio, id,
 	)
 	return err
 }

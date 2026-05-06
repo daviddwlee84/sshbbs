@@ -22,6 +22,9 @@ const (
 	ScreenArticleExport
 	ScreenBoardSplash
 	ScreenBoardBannerEdit
+	ScreenUserSettings
+	ScreenBioEdit
+	ScreenNotifySettings
 )
 
 // NavigateMsg is emitted by sub-screens to ask the Root to swap screens.

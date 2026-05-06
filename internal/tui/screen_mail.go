@@ -486,6 +486,7 @@ func (m mailComposeModel) submit() (tea.Model, tea.Cmd) {
 			FromUserID: from.UserID,
 			Subject:    subj,
 		})
+		notifyMail(m.deps, target.ID, from.UserID, subj, body)
 	}
 	m.sent = target.UserID
 	return m, nil

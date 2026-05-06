@@ -135,3 +135,49 @@ func TestPasswordChange_EscQuits(t *testing.T) {
 		t.Errorf("got %T, want tea.QuitMsg", msg)
 	}
 }
+
+// Voluntary password change (entered from settings menu, not from a forced
+// rotation) treats Esc as "back to settings", not "disconnect".
+func TestPasswordChange_EscFromSettingsGoesBack(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	hash, _ := auth.HashPassword("old-password")
+	u, err := st.Users().InsertSystemAccount(ctx, "alice", hash, store.RoleUser, false)
+	if err != nil {
+		t.Fatalf("InsertSystemAccount: %v", err)
+	}
+	deps := Deps{Store: st, User: u, MustChangePassword: false}
+	m := newPasswordChangeModel(deps)
+
+	_, cmd := m.Update(keyOf("esc"))
+	msg := runCmd(cmd)
+	nav, ok := msg.(NavigateMsg)
+	if !ok {
+		t.Fatalf("got %T, want NavigateMsg", msg)
+	}
+	if nav.To != ScreenUserSettings {
+		t.Errorf("To = %v, want ScreenUserSettings", nav.To)
+	}
+}
+
+func TestPasswordChange_VoluntarySuccessReturnsToSettings(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	hash, _ := auth.HashPassword("old-password")
+	u, _ := st.Users().InsertSystemAccount(ctx, "alice", hash, store.RoleUser, false)
+	deps := Deps{Store: st, User: u, MustChangePassword: false}
+	m := newPasswordChangeModel(deps)
+	m = setPwField(m, pwFieldCurrent, "old-password")
+	m = setPwField(m, pwFieldNew, "brand-new-1")
+	m = setPwField(m, pwFieldConfirm, "brand-new-1")
+
+	model, cmd := m.submit()
+	got := model.(passwordChangeModel)
+	if !got.success {
+		t.Fatalf("submit failed: %s", got.err)
+	}
+	nav, ok := runCmd(cmd).(NavigateMsg)
+	if !ok || nav.To != ScreenUserSettings {
+		t.Errorf("nav = %+v, want ScreenUserSettings", nav)
+	}
+}

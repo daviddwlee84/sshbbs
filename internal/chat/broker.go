@@ -100,6 +100,15 @@ func (b *Broker) SendToAll(excludeUID int64, msg tea.Msg) {
 	}
 }
 
+// IsOnline reports whether the user has at least one live session. Read-only;
+// uses the same RLock as Send so this is safe to call from the notify
+// dispatcher's worker goroutines while Update loops are running.
+func (b *Broker) IsOnline(uid int64) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.sessions[uid]) > 0
+}
+
 // LookupByUserID returns the numeric user_id for a logged-in account name,
 // or 0 if nobody by that name is currently online. Case-insensitive.
 func (b *Broker) LookupByUserID(name string) int64 {

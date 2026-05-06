@@ -16,6 +16,7 @@ import (
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/seed"
 	"github.com/daviddwlee84/sshbbs/internal/server"
 	"github.com/daviddwlee84/sshbbs/internal/store"
@@ -65,13 +66,17 @@ func main() {
 
 	broker := chat.NewBroker()
 
-	srv, err := server.New(server.Config{Addr: *addr, HostKey: *hostkey}, st, broker)
+	notifyMgr := notify.New(st, broker)
+
+	srv, err := server.New(server.Config{Addr: *addr, HostKey: *hostkey}, st, broker, notifyMgr)
 	if err != nil {
 		log.Fatalf("server.New: %v", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	notifyMgr.Start(ctx)
+	defer notifyMgr.Stop()
 
 	errCh := make(chan error, 1)
 	go func() {
