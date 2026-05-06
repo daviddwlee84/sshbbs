@@ -144,6 +144,14 @@ type mailThreadModel struct {
 	width    int
 	height   int
 	loadErr  error
+
+	// rendered holds the glamour-formatted body for each item, parallel to
+	// items[]. Cached because (a) glamour's first call loads chroma's
+	// syntax highlighter and (b) View is called on every keystroke;
+	// re-rendering N message bodies per keypress would lag visibly.
+	// renderedWidth lets us re-render only when the viewport width changes.
+	rendered      []string
+	renderedWidth int
 }
 
 func newMailThreadModel(deps Deps, threadID int64) mailThreadModel {
@@ -158,7 +166,26 @@ func newMailThreadModel(deps Deps, threadID int64) mailThreadModel {
 			}
 		}
 	}
-	return mailThreadModel{deps: deps, threadID: threadID, items: items, loadErr: err}
+	m := mailThreadModel{deps: deps, threadID: threadID, items: items, loadErr: err}
+	// Render at the fallback width so the body is readable even before the
+	// first WindowSizeMsg lands. Update re-renders on resize.
+	m.renderBodies()
+	return m
+}
+
+// renderBodies runs each item's body through glamour at the current
+// width. Cached on the model; cleared by passing a new width.
+func (m *mailThreadModel) renderBodies() {
+	width := m.width - 4
+	if width < 40 {
+		width = glamourFallbackWidth
+	}
+	out := make([]string, len(m.items))
+	for i, it := range m.items {
+		out[i] = renderMarkdown(it.Body, width)
+	}
+	m.rendered = out
+	m.renderedWidth = width
 }
 
 func (m mailThreadModel) Init() tea.Cmd { return nil }
@@ -167,6 +194,13 @@ func (m mailThreadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		newWidth := m.width - 4
+		if newWidth < 40 {
+			newWidth = glamourFallbackWidth
+		}
+		if newWidth != m.renderedWidth {
+			m.renderBodies()
+		}
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -230,7 +264,13 @@ func (m mailThreadModel) View() string {
 			it.CreatedAt.Format("2006-01-02 15:04"),
 		)) + "\n")
 		b.WriteString("  " + StyleDim.Render("Subject: ") + it.Subject + "\n")
-		b.WriteString("  " + indent(it.Body, "  ") + "\n\n")
+		// Use the glamour-rendered body when available; fall back to the
+		// raw body if rendering hasn't run (e.g. zero-width pre-resize).
+		body := it.Body
+		if i < len(m.rendered) && m.rendered[i] != "" {
+			body = m.rendered[i]
+		}
+		b.WriteString(body + "\n\n")
 	}
 
 	b.WriteString("  " + StyleHelp.Render("r reply · Esc/←/h back · Q quit"))

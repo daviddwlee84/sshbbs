@@ -7,15 +7,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
-
-// glamourFallbackWidth is the wrap width used before we get a
-// WindowSizeMsg. 80 is the historical terminal default; the renderer
-// re-runs with the real width as soon as the first resize lands.
-const glamourFallbackWidth = 80
 
 type articleViewModel struct {
 	deps    Deps
@@ -46,8 +40,7 @@ type articleViewModel struct {
 }
 
 // renderBody runs the article body through glamour with word-wrap set
-// to the current viewport. Falls back to the raw body on any glamour
-// error so a corrupt-markdown article is still readable.
+// to the current viewport.
 func (m *articleViewModel) renderBody() {
 	if m.article == nil {
 		m.rendered = ""
@@ -58,25 +51,7 @@ func (m *articleViewModel) renderBody() {
 	if width < 40 {
 		width = glamourFallbackWidth
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		m.rendered = m.article.Body
-		m.renderedWidth = width
-		return
-	}
-	out, err := r.Render(m.article.Body)
-	if err != nil {
-		m.rendered = m.article.Body
-		m.renderedWidth = width
-		return
-	}
-	// Trim leading/trailing blank lines glamour likes to add for
-	// breathing room — they push the content off-screen on small
-	// viewports. Internal blank lines stay.
-	m.rendered = strings.Trim(out, "\n")
+	m.rendered = renderMarkdown(m.article.Body, width)
 	m.renderedWidth = width
 }
 

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/daviddwlee84/sshbbs/internal/chat"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
@@ -119,6 +121,60 @@ func TestMailInbox_NoopsWhenEmpty(t *testing.T) {
 // =====================================================================
 // Thread
 // =====================================================================
+
+// TestMailThread_GlamourRendersMarkdown asserts each item's body is
+// glamour-rendered (ANSI present, headings preserved as visible text)
+// rather than printed raw. Mirrors TestArticleView_GlamourRendersMarkdown.
+func TestMailThread_GlamourRendersMarkdown(t *testing.T) {
+	deps, alice := mailFixture(t, 0)
+	bob := deps.User
+	_, err := deps.Store.Mail().Insert(
+		context.Background(),
+		alice.ID, alice.UserID, bob.ID,
+		"hi",
+		"# Big Heading\n\nbody paragraph here\n",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	threads, _ := deps.Store.Mail().ListInboxFor(context.Background(), bob.ID, 10)
+	m := newMailThreadModel(deps, threads[0].ThreadID)
+
+	if len(m.rendered) != 1 || m.rendered[0] == "" {
+		t.Fatalf("rendered = %v, want one non-empty entry", m.rendered)
+	}
+	if !strings.ContainsRune(m.rendered[0], '\x1b') {
+		t.Errorf("rendered[0] has no ANSI escape — glamour didn't run\nrendered: %q", m.rendered[0])
+	}
+	stripped := stripANSI(m.rendered[0])
+	if !strings.Contains(stripped, "Big Heading") {
+		t.Errorf("heading text lost: %q", stripped)
+	}
+	if !strings.Contains(stripped, "body paragraph here") {
+		t.Errorf("body text lost: %q", stripped)
+	}
+}
+
+// TestMailThread_GlamourReRendersOnResize verifies the cached rendering
+// is invalidated when the viewport width changes.
+func TestMailThread_GlamourReRendersOnResize(t *testing.T) {
+	deps, alice := mailFixture(t, 0)
+	bob := deps.User
+	_, _ = deps.Store.Mail().Insert(context.Background(), alice.ID, alice.UserID, bob.ID, "hi", "para\n", nil)
+	threads, _ := deps.Store.Mail().ListInboxFor(context.Background(), bob.ID, 10)
+
+	m := newMailThreadModel(deps, threads[0].ThreadID)
+	before := m.renderedWidth
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 50})
+	got := model.(mailThreadModel)
+	if got.renderedWidth == before {
+		t.Errorf("renderedWidth = %d (unchanged); resize should re-render", got.renderedWidth)
+	}
+	if got.renderedWidth != 196 { // 200 - 4 padding
+		t.Errorf("renderedWidth = %d, want 196 (200-4)", got.renderedWidth)
+	}
+}
 
 func TestMailThread_OpeningMarksRead(t *testing.T) {
 	deps, _ := mailFixture(t, 2)
