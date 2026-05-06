@@ -68,6 +68,13 @@ func (b *Broker) Unregister(userID int64, prog Sender) {
 
 // Send delivers msg to every live session of toUID. Returns true if at
 // least one session received it (i.e. the recipient is online).
+//
+// IMPORTANT: do NOT call from inside an Update path with toUID equal to
+// the caller's own UserID. bubbletea's tea.Program.Send writes to an
+// unbuffered msgs channel, so a self-targeted Send while the program
+// loop is blocked in Update will deadlock the SSH session. Application
+// code must guard self-targeting at the call site (see
+// pitfalls/water-balloon-self-send-hangs-server.md).
 func (b *Broker) Send(toUID int64, msg tea.Msg) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()

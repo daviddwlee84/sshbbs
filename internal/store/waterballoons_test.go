@@ -412,6 +412,32 @@ func TestWaterBalloons_MarkConversationRead_OnlyInbound(t *testing.T) {
 	}
 }
 
+// TestWaterBalloons_ListCounterpartiesFor_HidesSelf verifies that even
+// when self-WB rows exist (the schema doesn't forbid them), the inbox
+// roll-up never lists the viewer as their own counterparty. Sending to
+// self deadlocks the bubbletea msgs channel; the SQL filter keeps the
+// trap out of the UI even if pre-fix rows are still in the DB.
+func TestWaterBalloons_ListCounterpartiesFor_HidesSelf(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+
+	_, _ = st.WaterBalloons().Insert(ctx, alice.ID, alice.UserID, alice.ID, "self", false)
+	_, _ = st.WaterBalloons().Insert(ctx, bob.ID, bob.UserID, alice.ID, "from-bob", false)
+
+	rows, err := st.WaterBalloons().ListCounterpartiesFor(ctx, alice.ID, 50)
+	if err != nil {
+		t.Fatalf("ListCounterpartiesFor: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1 (self-WB should be hidden)", len(rows))
+	}
+	if rows[0].UserIDStr != "bob" {
+		t.Errorf("UserIDStr = %q, want bob", rows[0].UserIDStr)
+	}
+}
+
 // TestWaterBalloons_MarkConversationRead_Idempotent asserts the second call
 // is a no-op (no error, no spurious updates).
 func TestWaterBalloons_MarkConversationRead_Idempotent(t *testing.T) {

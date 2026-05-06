@@ -281,6 +281,74 @@ func TestWBThread_TypingForwardsToInput(t *testing.T) {
 	}
 }
 
+// TestWBThread_RefusesSelfThread guards against the bubbletea-msgs-channel
+// deadlock: opening a thread with yourself and pressing Enter would call
+// Broker.Send → unbuffered chan from inside your own Update loop. The
+// constructor blocks the trap by setting loadErr; the inbox already filters
+// self-WBs, so this code path should be unreachable from the UI but we
+// belt-and-brace because navigate is the only thing between a stray
+// CounterpartyUserID and the deadlock.
+func TestWBThread_RefusesSelfThread(t *testing.T) {
+	deps, _, bob := wbFixture(t, 0)
+	m := newWBThreadModel(deps, bob.ID) // bob is deps.User
+	if m.loadErr == nil {
+		t.Fatal("expected loadErr for self-thread")
+	}
+	if !strings.Contains(m.loadErr.Error(), "yourself") {
+		t.Errorf("loadErr = %v, want one mentioning 'yourself'", m.loadErr)
+	}
+}
+
+// TestWBThread_SubmitGuardsAgainstSelf is the defensive layer: even if
+// somehow a wbThreadModel got constructed with cpID == User.ID, submit
+// must refuse rather than deadlock. Construct manually to bypass the
+// constructor guard.
+func TestWBThread_SubmitGuardsAgainstSelf(t *testing.T) {
+	deps, _, bob := wbFixture(t, 0)
+	m := wbThreadModel{
+		deps:     deps,
+		cpID:     bob.ID, // self
+		cpUserID: "bob",
+	}
+	m.input.SetValue("hi me")
+	updated, _ := m.submit()
+	tm := updated.(wbThreadModel)
+	if tm.err == "" {
+		t.Error("submit to self did not set err")
+	}
+	if len(tm.items) != 0 {
+		t.Errorf("self-submit appended %d items, want 0", len(tm.items))
+	}
+}
+
+// =====================================================================
+// Compose self-send guard
+// =====================================================================
+
+// TestWBCompose_BlocksSelfSend reproduces the original hang report: when
+// alice types her own userid as recipient and presses Ctrl+S, submit must
+// refuse with an inline error rather than calling Insert + Broker.Send
+// (which would deadlock the unbuffered bubbletea msgs channel).
+func TestWBCompose_BlocksSelfSend(t *testing.T) {
+	deps, _, _ := wbFixture(t, 0)
+	m := newWBComposeModel(deps, "")
+	m.to.SetValue("bob") // wbFixture's deps.User is bob
+	m.body.SetValue("hi me")
+	updated, _ := m.submit()
+	cm := updated.(wbComposeModel)
+	if cm.err == "" {
+		t.Fatal("self-send produced no error message")
+	}
+	if !strings.Contains(cm.err, "yourself") {
+		t.Errorf("err = %q, want one mentioning 'yourself'", cm.err)
+	}
+	// And no row was written.
+	rows, _ := deps.Store.WaterBalloons().ListConversation(t.Context(), deps.User.ID, deps.User.ID, 10)
+	if len(rows) != 0 {
+		t.Errorf("self-send produced %d DB rows, want 0", len(rows))
+	}
+}
+
 // TestWBThread_RendersCurrentHandle ensures the sender label uses the
 // current handle from cpUserID (resolved via users JOIN at construction)
 // rather than each row's from_userid snapshot. We can't easily simulate a
