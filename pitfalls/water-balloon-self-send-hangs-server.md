@@ -138,8 +138,10 @@ The Send→Send→submit chain inside the same session is the smoking gun.
   `TestBroker_SendToAllExcludesSender`) to switch from "assert
   immediately after Send" to an `eventually`-style wait. Worth it only if
   the use case demands it; today the app-layer guard is sufficient.
-- Mail's `Broker.Send` after `Mail().Insert` could in principle hit the
-  same trap if the UI ever lets you mail yourself. Currently `mailCompose`
-  doesn't have an explicit guard but the inbox/thread doesn't surface
-  mail-from-self as a discoverable action; if a "mail yourself a
-  reminder" feature ever lands, mirror the wbCompose guard.
+- Mail's `Broker.Send` after `Mail().Insert` had the **same trap** —
+  fixed in the same way (`screen_mail.go` `mailComposeModel.submit`):
+  when `target.ID == from.ID`, skip `Broker.Send` and call
+  `Mail().MarkRead(mail.ID)` immediately so the unread counter doesn't
+  bump for memos. Reply quoting (markdown `> ` blockquote of parent
+  body, attribution line) was added in the same change so a self-mail
+  thread reads coherently.

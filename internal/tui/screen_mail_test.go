@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
@@ -232,6 +233,68 @@ func TestMailCompose_ReplySetsParent(t *testing.T) {
 	}
 	if repl[0].ThreadID != parent.ThreadID {
 		t.Errorf("reply ThreadID = %d, want %d", repl[0].ThreadID, parent.ThreadID)
+	}
+}
+
+// Reply pre-fills body with the parent quoted in markdown blockquote
+// form (`> ` prefix on every line plus an attribution line). Cursor
+// implicitly lands at the end of the trailing blank line so the user
+// can start typing immediately.
+func TestMailCompose_ReplyQuotesParentBody(t *testing.T) {
+	deps, alice := mailFixture(t, 0)
+	// Insert a parent with a multi-line body addressed to bob (deps.User).
+	bob := deps.User
+	parent, err := deps.Store.Mail().Insert(
+		context.Background(),
+		alice.ID, alice.UserID, bob.ID,
+		"original",
+		"first line\nsecond line\n\nfourth line",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("seed parent: %v", err)
+	}
+	m := newMailComposeModel(deps, alice.UserID, parent.ID)
+
+	got := m.body.Value()
+	if !strings.Contains(got, "> "+alice.UserID+" · ") {
+		t.Errorf("body missing attribution line; got:\n%s", got)
+	}
+	for _, line := range []string{"> first line", "> second line", "> ", "> fourth line"} {
+		if !strings.Contains(got, line) {
+			t.Errorf("body missing quoted line %q; got:\n%s", line, got)
+		}
+	}
+	// Trailing blank line so cursor sits ready to type below the quote.
+	if !strings.HasSuffix(got, "\n\n") {
+		t.Errorf("body should end in blank line; got %q", got[len(got)-min(20, len(got)):])
+	}
+}
+
+// Self-mail (memo): same skip-Broker.Send pattern as wb compose.
+// Verified by (a) no error / sent flag set, (b) row exists, (c) read_at
+// auto-populated so it doesn't bump the unread counter on reconnect.
+// Pre-fix this test would have deadlocked the runner.
+func TestMailCompose_AllowsSelfMemo(t *testing.T) {
+	deps, _ := mailFixture(t, 0)
+	bob := deps.User
+	m := newMailComposeModel(deps, bob.UserID, 0)
+	m.subject.SetValue("todo")
+	m.body.SetValue("buy milk")
+	model, _ := m.submit()
+	cm := model.(mailComposeModel)
+	if cm.err != "" {
+		t.Fatalf("self-mail errored: %q", cm.err)
+	}
+	if cm.sent != bob.UserID {
+		t.Errorf("sent = %q, want %q", cm.sent, bob.UserID)
+	}
+	got, _ := deps.Store.Mail().ListInboxFor(context.Background(), bob.ID, 10)
+	if len(got) != 1 {
+		t.Fatalf("inbox = %d rows, want 1", len(got))
+	}
+	if !got[0].ReadAt.Valid {
+		t.Error("self-mail not auto-marked read — would bump unread counter on reconnect")
 	}
 }
 

@@ -293,7 +293,9 @@ func newMailComposeModel(deps Deps, recipient string, parentID int64) mailCompos
 	body.SetHeight(8)
 
 	// On reply, default the subject from the parent (with "Re: " prefix
-	// once and only once).
+	// once and only once) and pre-fill the body with the parent quoted in
+	// markdown blockquote (`> `) form so the reply reads like an email
+	// thread. Cursor lands after the trailing blank line.
 	if parentID != 0 && deps.Store != nil {
 		if parent, err := deps.Store.Mail().GetByID(context.Background(), parentID); err == nil {
 			s := parent.Subject
@@ -301,6 +303,7 @@ func newMailComposeModel(deps Deps, recipient string, parentID int64) mailCompos
 				s = "Re: " + s
 			}
 			subj.SetValue(s)
+			body.SetValue(quoteForReply(parent))
 		}
 	}
 
@@ -426,7 +429,15 @@ func (m mailComposeModel) submit() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	if m.deps.Broker != nil {
+	if target.ID == from.ID {
+		// Self-mail (memo). Skip Broker.Send: target is the caller, and
+		// pushing onto bubbletea's unbuffered msgs channel from inside
+		// the caller's own Update loop deadlocks the SSH session — see
+		// pitfalls/water-balloon-self-send-hangs-server.md (same root
+		// cause, different surface). Mark read immediately so the unread
+		// counter doesn't bump for a memo the user just wrote.
+		_ = m.deps.Store.Mail().MarkRead(ctx, mail.ID)
+	} else if m.deps.Broker != nil {
 		// Notify the recipient so an open inbox can refresh. Distinct from
 		// water balloons (which always toast); mail is "silent" delivery.
 		m.deps.Broker.Send(target.ID, MailIncomingMsg{
@@ -438,6 +449,34 @@ func (m mailComposeModel) submit() (tea.Model, tea.Cmd) {
 	}
 	m.sent = target.UserID
 	return m, nil
+}
+
+// quoteForReply renders the parent mail as a markdown blockquote suitable
+// for pre-filling the reply body. Format:
+//
+//	> alice · 2026-05-06 14:23 寫道:
+//	>
+//	> previous body line 1
+//	> previous body line 2
+//
+//	<cursor lands here>
+//
+// Empty lines in the parent body are still prefixed with "> " so the
+// blockquote stays contiguous (matches RFC 3676 / common email-client
+// convention).
+func quoteForReply(parent *store.Mail) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "> %s · %s 寫道:\n>\n",
+		parent.FromUserIDStr,
+		parent.CreatedAt.Format("2006-01-02 15:04"),
+	)
+	for _, line := range strings.Split(parent.Body, "\n") {
+		b.WriteString("> ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 func (m mailComposeModel) View() string {
