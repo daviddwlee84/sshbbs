@@ -119,7 +119,7 @@ func (m mainMenuModel) View() string {
 	}
 
 	b.WriteString("\n  ")
-	b.WriteString(StyleHelp.Render(fmt.Sprintf("↑/↓ j/k move · Enter/→/l choose · 1-%d jump · q quit", len(m.items))))
+	b.WriteString(StyleHelp.Render(fmt.Sprintf("↑/↓ j/k move · Enter/→/l choose · 1-%d jump · ? help · q quit", len(m.items))))
 	b.WriteString("\n")
 	return b.String()
 }

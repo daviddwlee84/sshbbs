@@ -32,6 +32,14 @@ type Root struct {
 
 	toast      string
 	toastUntil time.Time
+
+	// activeScreen tracks which Screen the current sub corresponds to, so
+	// the help overlay can render a context-aware keymap. Set in NewRoot
+	// for the bootstrap sub and in navigate for every subsequent swap.
+	activeScreen Screen
+	// helpVisible is true while the help overlay should render in place of
+	// the sub view. Toggled on '?' and dismissed by any key.
+	helpVisible bool
 }
 
 const toastDuration = 3 * time.Second
@@ -46,10 +54,13 @@ func NewRoot(deps Deps) Root {
 	switch {
 	case deps.IsRegister:
 		r.sub = newRegisterModel(deps)
+		// No Screen const for register; help is suppressed via deps.IsRegister.
 	case deps.MustChangePassword:
 		r.sub = newPasswordChangeModel(deps)
+		r.activeScreen = ScreenPasswordChange
 	default:
 		r.sub = newMainMenuModel(deps)
+		r.activeScreen = ScreenMainMenu
 	}
 	return r
 }
@@ -71,6 +82,17 @@ func (m Root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global ctrl+c always quits.
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		// Help overlay: any key dismisses, swallow the keypress so the
+		// sub doesn't act on it. ctrl+c above is the deliberate exception.
+		if m.helpVisible {
+			m.helpVisible = false
+			return m, nil
+		}
+		// '?' opens the help overlay on screens that aren't typing-forms.
+		if msg.String() == "?" && helpAvailable(m.deps, m.activeScreen) {
+			m.helpVisible = true
+			return m, nil
 		}
 		// Global Ctrl+U opens water balloon inbox (logged-in only).
 		if msg.String() == "ctrl+u" && !m.deps.IsRegister {
@@ -103,6 +125,11 @@ func (m Root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Root) View() string {
+	if m.helpVisible {
+		// Replace the sub view entirely so the keymap reads cleanly. Toast
+		// suppressed too — would distract from a help screen.
+		return renderHelp(m.activeScreen)
+	}
 	v := m.sub.View()
 	if m.toast != "" && time.Now().Before(m.toastUntil) {
 		v += "\n" + StyleToast.Render(m.toast)
@@ -190,6 +217,7 @@ func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.sub = sub
+	m.activeScreen = n.To
 	cmd := sub.Init()
 	if m.width > 0 {
 		// Forward current size to the new sub so it can lay out immediately.
