@@ -548,7 +548,7 @@ func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Kind:       notify.KindPush,
 				ToUserID:   m.article.AuthorID,
 				FromUserID: u.UserID,
-				Title:      i18n.Tf(recLoc, i18n.NotifyPushTitle, u.UserID, kindLabel(m.pushKind)),
+				Title:      i18n.Tf(recLoc, i18n.NotifyPushTitle, u.UserID, kindLabel(recLoc, m.pushKind)),
 				Body:       fmt.Sprintf("%s\n\n%s", Truncate(m.article.Title, 60), body),
 			})
 		}
@@ -611,7 +611,7 @@ func (m articleViewModel) View() string {
 			}
 			line := fmt.Sprintf("%s%s %s %s  %s",
 				gutter,
-				renderPushKind(p.Kind),
+				renderPushKind(loc, p.Kind),
 				PadRight(p.UserUserID, 14),
 				p.Body,
 				StyleDim.Render(ts),
@@ -625,7 +625,7 @@ func (m articleViewModel) View() string {
 
 	if m.pushing {
 		b.WriteString("\n  ")
-		b.WriteString(renderPushKind(m.pushKind) + " ")
+		b.WriteString(renderPushKind(loc, m.pushKind) + " ")
 		b.WriteString(m.pushIn.View())
 		b.WriteString("\n")
 		if m.err != "" {
@@ -670,29 +670,27 @@ func (m articleViewModel) View() string {
 	return b.String()
 }
 
-func renderPushKind(k store.PushKind) string {
+// renderPushKind returns the locale-aware push glyph wrapped in the
+// per-kind lipgloss style. en mode swaps 推/噓 → 👍/👎 (same display
+// width per i18n.PushGlyph's contract) so the article-list column
+// alignment doesn't shift across locales.
+func renderPushKind(loc i18n.Locale, k store.PushKind) string {
+	g := i18n.PushGlyph(loc, k)
 	switch k {
 	case store.PushKindPush:
-		return StylePushKind.Render("推")
+		return StylePushKind.Render(g)
 	case store.PushKindBoo:
-		return StyleBooKind.Render("噓")
+		return StyleBooKind.Render(g)
 	case store.PushKindArrow:
-		return StyleArrowKind.Render("→")
+		return StyleArrowKind.Render(g)
 	}
 	return "?"
 }
 
-// kindLabel renders a short verb for push notifications. Mirrors the
-// renderPushKind glyphs (推 / 噓 / →) but as plain text so it survives
+// kindLabel renders the unstyled glyph used inside webhook notification
+// titles (e.g. "[BBS] alice 👍 your post"). Same locale rule as
+// renderPushKind, just without the lipgloss wrapper so it survives
 // non-color webhooks (Discord embeds, plain SMS, etc.).
-func kindLabel(k store.PushKind) string {
-	switch k {
-	case store.PushKindPush:
-		return "推"
-	case store.PushKindBoo:
-		return "噓"
-	case store.PushKindArrow:
-		return "→"
-	}
-	return "?"
+func kindLabel(loc i18n.Locale, k store.PushKind) string {
+	return i18n.PushVerb(loc, k)
 }

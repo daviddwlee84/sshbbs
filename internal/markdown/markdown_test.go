@@ -294,3 +294,29 @@ func TestParse_PushesWithSingleSpaceFallback(t *testing.T) {
 		t.Errorf("ts: %v want %v", got.CreatedAt, want)
 	}
 }
+
+// TestFormat_PushGlyphsAreCanonicalRegardlessOfLocale guards the Hard
+// invariant from .claude/plans/english-mode-calm-lobster.md §6:
+// markdown export MUST emit canonical zh-TW glyphs (推/噓/→) so the
+// parser at parsePushLine round-trips, no matter what locale the
+// originating user has set in their UI. If anyone reroutes Format
+// through the locale-aware i18n.PushGlyph helper, this test fails and
+// `sshbbs export | sshbbs import` silently breaks.
+func TestFormat_PushGlyphsAreCanonicalRegardlessOfLocale(t *testing.T) {
+	a := sampleArticle()
+	pushes := samplePushes()
+	out, err := markdown.Format(a, pushes, markdown.FormatOpts{IncludePushes: true, BoardName: "Welcome"})
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	for _, want := range []string{"\n- 推 [", "\n- 噓 [", "\n- → ["} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing canonical glyph line %q in:\n%s", want, out)
+		}
+	}
+	for _, banned := range []string{"\n- 👍 [", "\n- 👎 [", "\n- 💥 ["} {
+		if strings.Contains(out, banned) {
+			t.Errorf("forbidden emoji glyph %q leaked into export:\n%s", banned, out)
+		}
+	}
+}

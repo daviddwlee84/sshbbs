@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/daviddwlee84/sshbbs/internal/i18n"
+	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
 // HelpEntry is one row in a screen's keymap. Keys is the displayed shortcut
@@ -32,183 +33,227 @@ type helpSection struct {
 // intentionally absent: they need to pass `?` through to textinput so the
 // user can type it as a literal character. Their bottom help-line already
 // surfaces every key they bind.
-var screenHelp = map[Screen][]helpSection{
-	ScreenMainMenu: {{
-		Heading: "Main menu",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "move cursor"},
-			{"Enter/→/l", "select"},
-			{"1-9", "jump to numbered slot"},
-			{"q", "quit"},
-		},
-	}},
-	ScreenBoardList: {{
-		Heading: "Board list",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k [/]", "move cursor"},
-			{"Enter/→/l", "open board"},
-			{"/", "search boards (Enter applies, Esc cancels)"},
-			{"Esc (filtered)", "clear active filter"},
-			{"Esc/←/h", "back"},
-		},
-	}},
-	ScreenBoardView: {{
-		Heading: "Board view (article list)",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k [/]", "move cursor"},
-			{"Enter/→/l", "open article"},
-			{"/", "search articles by title"},
-			{"s", "toggle sort (Newest ↔ 推文量)"},
-			{"Esc (filtered)", "clear active filter"},
-			{"p", "post new article (non-guest)"},
-			{"b", "board banner splash (if banner set)"},
-			{"B", "edit banner (mod+)"},
-			{"M", "pin / unpin (mod+)"},
-			{"Esc/←/h", "back to board list"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenArticleView: {{
-		Heading: "Article view",
-		Entries: []HelpEntry{
-			{"j/k", "scroll"},
-			{"g/G", "top / bottom"},
-			{"PgUp/PgDn", "page scroll (b/space aliases)"},
-			{"+ / - / =", "推 / 噓 / → (non-guest)"},
-			{"r", "reply (Re:) — opens compose with parent quoted"},
-			{"p / P", "select push for delete"},
-			{"D", "delete cursored article or push (owner / mod+)"},
-			{"E", "edit article (author / mod+)"},
-			{"y", "export article markdown"},
-			{"[ / ]", "previous / next article on this board"},
-			{"Esc/←/h", "back to board"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenWBInbox: {{
-		Heading: "水球 inbox (per-counterparty roll-up)",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "move cursor"},
-			{"Enter/→/l/r", "open thread with cursored user"},
-			{"c", "compose new water balloon"},
-			{"Esc/←/h", "back to main menu"},
-		},
-	}},
-	ScreenWBThread: {
-		{
-			Heading: "水球 對話 — input focused (default)",
+// screenHelpFor returns the help-overlay sections for the given screen,
+// resolved at the given locale. Most rows are universal English (key
+// names + short verbs) and don't depend on locale; the few that mention
+// 水球 / 信箱 / 推文量 / 推/噓/→ swap to their en counterparts via
+// i18n.PushGlyph in en mode so the overlay reads consistently with the
+// rest of the UI. Returns the empty slice (caller treats as "no entry")
+// for unknown screens.
+func screenHelpFor(loc i18n.Locale, s Screen) []helpSection {
+	pushG := i18n.PushGlyph(loc, store.PushKindPush)
+	booG := i18n.PushGlyph(loc, store.PushKindBoo)
+	arrowG := i18n.PushGlyph(loc, store.PushKindArrow)
+
+	wb := "水球"
+	mailbox := "信箱"
+	mailThread := "信件"
+	chat := "對話"
+	pushAmount := "推文量"
+	whisper := "丟水球"
+	if loc == i18n.LocaleEN {
+		wb = "Water Balloon"
+		mailbox = "Mail"
+		mailThread = "Mail"
+		chat = "chat"
+		pushAmount = "score"
+		whisper = "whisper"
+	}
+
+	switch s {
+	case ScreenMainMenu:
+		return []helpSection{{
+			Heading: "Main menu",
 			Entries: []HelpEntry{
-				{"Enter", "send the typed message"},
-				{"Tab", "switch focus to scrollback"},
-				{"↑/↓ PgUp/PgDn", "scroll history while typing"},
-				{"Esc", "back to inbox"},
-				{"(any other key)", "typed into the input"},
+				{"↑/↓ j/k", "move cursor"},
+				{"Enter/→/l", "select"},
+				{"1-9", "jump to numbered slot"},
+				{"q", "quit"},
 			},
-		},
-		{
-			Heading: "Scrollback focused (after Tab)",
+		}}
+	case ScreenBoardList:
+		return []helpSection{{
+			Heading: "Board list",
 			Entries: []HelpEntry{
-				{"↑/↓ j/k PgUp/PgDn", "scroll"},
-				{"g / G / Home / End", "top / end"},
-				{"Tab", "back to input"},
+				{"↑/↓ j/k [/]", "move cursor"},
+				{"Enter/→/l", "open board"},
+				{"/", "search boards (Enter applies, Esc cancels)"},
+				{"Esc (filtered)", "clear active filter"},
+				{"Esc/←/h", "back"},
+			},
+		}}
+	case ScreenBoardView:
+		return []helpSection{{
+			Heading: "Board view (article list)",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k [/]", "move cursor"},
+				{"Enter/→/l", "open article"},
+				{"/", "search articles by title"},
+				{"s", "toggle sort (Newest ↔ " + pushAmount + ")"},
+				{"Esc (filtered)", "clear active filter"},
+				{"p", "post new article (non-guest)"},
+				{"b", "board banner splash (if banner set)"},
+				{"B", "edit banner (mod+)"},
+				{"M", "pin / unpin (mod+)"},
+				{"Esc/←/h", "back to board list"},
+				{"Q", "back to main menu"},
+			},
+		}}
+	case ScreenArticleView:
+		return []helpSection{{
+			Heading: "Article view",
+			Entries: []HelpEntry{
+				{"j/k", "scroll"},
+				{"g/G", "top / bottom"},
+				{"PgUp/PgDn", "page scroll (b/space aliases)"},
+				{"+ / - / =", pushG + " / " + booG + " / " + arrowG + " (non-guest)"},
+				{"r", "reply (Re:) — opens compose with parent quoted"},
+				{"p / P", "select push for delete"},
+				{"D", "delete cursored article or push (owner / mod+)"},
+				{"E", "edit article (author / mod+)"},
+				{"y", "export article markdown"},
+				{"[ / ]", "previous / next article on this board"},
+				{"Esc/←/h", "back to board"},
+				{"Q", "back to main menu"},
+			},
+		}}
+	case ScreenWBInbox:
+		return []helpSection{{
+			Heading: wb + " inbox (per-counterparty roll-up)",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k", "move cursor"},
+				{"Enter/→/l/r", "open thread with cursored user"},
+				{"c", "compose new water balloon"},
+				{"Esc/←/h", "back to main menu"},
+			},
+		}}
+	case ScreenWBThread:
+		return []helpSection{
+			{
+				Heading: wb + " " + chat + " — input focused (default)",
+				Entries: []HelpEntry{
+					{"Enter", "send the typed message"},
+					{"Tab", "switch focus to scrollback"},
+					{"↑/↓ PgUp/PgDn", "scroll history while typing"},
+					{"Esc", "back to inbox"},
+					{"(any other key)", "typed into the input"},
+				},
+			},
+			{
+				Heading: "Scrollback focused (after Tab)",
+				Entries: []HelpEntry{
+					{"↑/↓ j/k PgUp/PgDn", "scroll"},
+					{"g / G / Home / End", "top / end"},
+					{"Tab", "back to input"},
+					{"Esc/←/h", "back to inbox"},
+					{"Q", "back to main menu"},
+				},
+			},
+		}
+	case ScreenOnline:
+		return []helpSection{{
+			Heading: "Online users",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k [/]", "move cursor"},
+				{"Enter/→/l", whisper + " (compose)"},
+				{"t", chat + " thread (chat-style)"},
+				{"g / G / Home / End", "top / bottom"},
+				{"Esc/←/h", "back to main menu"},
+				{"Q", "back to main menu"},
+			},
+		}}
+	case ScreenMailInbox:
+		return []helpSection{{
+			Heading: mailbox + " (mail inbox)",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k [/]", "move cursor"},
+				{"Enter/→/l", "open thread"},
+				{"r", "reply to cursored mail"},
+				{"c", "compose new mail"},
+				{"Esc/←/h", "back to main menu"},
+				{"Q", "back to main menu"},
+			},
+		}}
+	case ScreenMailThread:
+		return []helpSection{{
+			Heading: mailThread + " thread",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k", "scroll"},
+				{"g", "top"},
+				{"r", "reply"},
 				{"Esc/←/h", "back to inbox"},
 				{"Q", "back to main menu"},
 			},
-		},
-	},
-	ScreenOnline: {{
-		Heading: "Online users",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k [/]", "move cursor"},
-			{"Enter/→/l", "丟水球 (compose)"},
-			{"t", "對話 thread (chat-style)"},
-			{"g / G / Home / End", "top / bottom"},
-			{"Esc/←/h", "back to main menu"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenMailInbox: {{
-		Heading: "信箱 (mail inbox)",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k [/]", "move cursor"},
-			{"Enter/→/l", "open thread"},
-			{"r", "reply to cursored mail"},
-			{"c", "compose new mail"},
-			{"Esc/←/h", "back to main menu"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenMailThread: {{
-		Heading: "信件 thread",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "scroll"},
-			{"g", "top"},
-			{"r", "reply"},
-			{"Esc/←/h", "back to inbox"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenUserSettings: {{
-		Heading: "User settings",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "move cursor"},
-			{"Enter/→/l", "open sub-screen"},
-			{"1-5", "jump to numbered slot"},
-			{"Esc/←/h q", "back to main menu"},
-		},
-	}},
-	ScreenLocaleSettings: {{
-		Heading: "Locale settings",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "move cursor"},
-			{"Enter/Space/→/l", "select highlighted locale"},
-			{"1-2", "jump to numbered locale"},
-			{"Ctrl+S", "save"},
-			{"Esc/←/h", "back to user settings (discard unsaved)"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenNotifySettings: {{
-		Heading: "Notification settings",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "move cursor (toggles + targets + add)"},
-			{"Space", "flip pref / toggle target enabled"},
-			{"Ctrl+S", "save event toggles"},
-			{"a", "add new webhook target"},
-			{"e", "edit cursored target"},
-			{"t", "toggle cursored target enabled"},
-			{"T", "send test notification to cursored target"},
-			{"d", "delete cursored target"},
-			{"Esc/←/h", "back to user settings"},
-			{"Q", "back to main menu"},
-		},
-	}},
-	ScreenAdminUsers: {{
-		Heading: "Admin: users",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "move cursor"},
-			{"[ / ]", "prev / next page"},
-			{"a / m / u / g", "promote to admin / mod / user / guest"},
-			{"R", "reset password (forces change on next login)"},
-			{"Esc/←/h", "back to main menu"},
-		},
-	}},
-	ScreenArticleExport: {{
-		Heading: "Export article",
-		Entries: []HelpEntry{
-			{"1", "plain body"},
-			{"2", "body + pushes"},
-			{"3", "save to data/exports/<userid>/"},
-			{"c", "OSC52 copy to clipboard"},
-			{"Esc/←/h/q", "back"},
-		},
-	}},
-	ScreenBoardSplash: {{
-		Heading: "Board banner splash",
-		Entries: []HelpEntry{
-			{"any key", "return to board view"},
-		},
-	}},
+		}}
+	case ScreenUserSettings:
+		return []helpSection{{
+			Heading: "User settings",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k", "move cursor"},
+				{"Enter/→/l", "open sub-screen"},
+				{"1-5", "jump to numbered slot"},
+				{"Esc/←/h q", "back to main menu"},
+			},
+		}}
+	case ScreenLocaleSettings:
+		return []helpSection{{
+			Heading: "Locale settings",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k", "move cursor"},
+				{"Enter/Space/→/l", "select highlighted locale"},
+				{"1-2", "jump to numbered locale"},
+				{"Ctrl+S", "save"},
+				{"Esc/←/h", "back to user settings (discard unsaved)"},
+				{"Q", "back to main menu"},
+			},
+		}}
+	case ScreenNotifySettings:
+		return []helpSection{{
+			Heading: "Notification settings",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k", "move cursor (toggles + targets + add)"},
+				{"Space", "flip pref / toggle target enabled"},
+				{"Ctrl+S", "save event toggles"},
+				{"a", "add new webhook target"},
+				{"e", "edit cursored target"},
+				{"t", "toggle cursored target enabled"},
+				{"T", "send test notification to cursored target"},
+				{"d", "delete cursored target"},
+				{"Esc/←/h", "back to user settings"},
+				{"Q", "back to main menu"},
+			},
+		}}
+	case ScreenAdminUsers:
+		return []helpSection{{
+			Heading: "Admin: users",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k", "move cursor"},
+				{"[ / ]", "prev / next page"},
+				{"a / m / u / g", "promote to admin / mod / user / guest"},
+				{"R", "reset password (forces change on next login)"},
+				{"Esc/←/h", "back to main menu"},
+			},
+		}}
+	case ScreenArticleExport:
+		return []helpSection{{
+			Heading: "Export article",
+			Entries: []HelpEntry{
+				{"1", "plain body"},
+				{"2", "body + pushes"},
+				{"3", "save to data/exports/<userid>/"},
+				{"c", "OSC52 copy to clipboard"},
+				{"Esc/←/h/q", "back"},
+			},
+		}}
+	case ScreenBoardSplash:
+		return []helpSection{{
+			Heading: "Board banner splash",
+			Entries: []HelpEntry{
+				{"any key", "return to board view"},
+			},
+		}}
+	}
+	return nil
 }
 
 // helpGlobals are the cross-screen keys shown on every help page so users
@@ -267,8 +312,8 @@ func renderHelp(loc i18n.Locale, s Screen) string {
 	var b strings.Builder
 	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.HelpOverlayTitle)) + "\n\n")
 
-	sections, ok := screenHelp[s]
-	if !ok {
+	sections := screenHelpFor(loc, s)
+	if len(sections) == 0 {
 		b.WriteString("  " + StyleDim.Render("(no per-screen keymap registered for this screen)") + "\n\n")
 	} else {
 		for i, sec := range sections {

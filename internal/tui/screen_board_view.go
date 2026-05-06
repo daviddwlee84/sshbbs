@@ -301,7 +301,7 @@ func (m boardViewModel) View() string {
 		score := ""
 		switch {
 		case a.RecommendScore >= 100:
-			score = "爆"
+			score = i18n.ScoreExploded(loc)
 		case a.RecommendScore > 0:
 			score = fmt.Sprintf("%d", a.RecommendScore)
 		case a.RecommendScore < 0:
@@ -309,20 +309,15 @@ func (m boardViewModel) View() string {
 		}
 		// Pinned (板規 / 置頂) articles surface a leading "[M] " marker —
 		// the same glyph PTT uses for M-marked posts. Locked / arrows-only
-		// articles stack additional [鎖] / [箭] badges so users see the
-		// constraint before opening the article. Long titles still get
-		// truncated by Truncate.
+		// articles stack additional [鎖] / [箭] (zh-TW) or [L] / [A] (en)
+		// badges via i18n.CommentsModeBadge so users see the constraint
+		// before opening the article. Long titles still get truncated.
 		title := a.Title
 		var prefix string
 		if a.PinnedAt.Valid {
 			prefix += "[M]"
 		}
-		switch a.CommentsMode {
-		case store.CommentsModeLocked:
-			prefix += "[鎖]"
-		case store.CommentsModeArrowsOnly:
-			prefix += "[箭]"
-		}
+		prefix += i18n.CommentsModeBadge(loc, a.CommentsMode)
 		if prefix != "" {
 			title = prefix + " " + a.Title
 		}

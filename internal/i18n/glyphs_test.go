@@ -79,3 +79,27 @@ func TestCommentsModeBadge(t *testing.T) {
 		}
 	}
 }
+
+// CommentsModeBadge widths: zh-TW renders "[鎖]" (4 cells), en renders
+// "[L]" (3 cells). The badge is a prefix on the title cell, NOT a column-
+// aligned cell, so the 1-cell shrink in en is intentional. Test pins the
+// numbers so a future tweak (e.g. to "[L ]" for parity) is a deliberate
+// choice rather than a silent regression.
+func TestCommentsModeBadge_Widths(t *testing.T) {
+	cases := []struct {
+		mode  store.CommentsMode
+		zhW   int
+		enW   int
+	}{
+		{store.CommentsModeLocked, 4, 3},
+		{store.CommentsModeArrowsOnly, 4, 3},
+	}
+	for _, tc := range cases {
+		if w := runewidth.StringWidth(CommentsModeBadge(LocaleZHTW, tc.mode)); w != tc.zhW {
+			t.Errorf("CommentsModeBadge(zh, %q) width = %d, want %d", tc.mode, w, tc.zhW)
+		}
+		if w := runewidth.StringWidth(CommentsModeBadge(LocaleEN, tc.mode)); w != tc.enW {
+			t.Errorf("CommentsModeBadge(en, %q) width = %d, want %d", tc.mode, w, tc.enW)
+		}
+	}
+}

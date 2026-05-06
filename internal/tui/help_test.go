@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store/storetest"
 )
 
@@ -171,7 +172,7 @@ func TestHelp_NonFormScreensAllHaveEntries(t *testing.T) {
 		ScreenBoardSplash,
 	}
 	for _, s := range want {
-		if _, ok := screenHelp[s]; !ok {
+		if len(screenHelpFor(i18n.Default, s)) == 0 {
 			t.Errorf("missing screenHelp entry for %v", s)
 		}
 	}
@@ -192,7 +193,7 @@ func TestHelp_BoardListAndViewAdvertiseSearchSort(t *testing.T) {
 // "/ search by title" still satisfy `requireKey(.., "/")`).
 func requireKey(t *testing.T, s Screen, key string) {
 	t.Helper()
-	for _, sec := range screenHelp[s] {
+	for _, sec := range screenHelpFor(i18n.Default, s) {
 		for _, e := range sec.Entries {
 			if strings.HasPrefix(e.Keys, key) {
 				return
