@@ -134,6 +134,62 @@ func TestBuildAppriseRequest_PayloadShape(t *testing.T) {
 	}
 }
 
+func TestRedactURL(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "discord webhook hides token only",
+			in:   "https://discord.com/api/webhooks/1111111111111111111/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-yyyyyyyyyyyyyyyyyyyyyyyy",
+			want: "https://discord.com/api/webhooks/1111111111111111111/<redacted>",
+		},
+		{
+			name: "slack webhook hides signing key",
+			in:   "https://hooks.slack.com/services/T123/B456/xVeRyS3cret",
+			want: "https://hooks.slack.com/services/T123/B456/<redacted>",
+		},
+		{
+			name: "ntfy topic is the credential",
+			in:   "https://ntfy.sh/my-secret-topic",
+			want: "https://ntfy.sh/<redacted>",
+		},
+		{
+			name: "apprise key redacted",
+			in:   "http://apprise:8000/notify/alice-discord",
+			want: "http://apprise:8000/notify/<redacted>",
+		},
+		{
+			name: "query string also stripped",
+			in:   "https://example.com/notify?token=abc123&user=alice",
+			want: "https://example.com/<redacted>",
+		},
+		{
+			name: "root path returns unchanged",
+			in:   "https://example.com/",
+			want: "https://example.com/",
+		},
+		{
+			name: "no path returns unchanged",
+			in:   "https://example.com",
+			want: "https://example.com",
+		},
+		{
+			name: "malformed url returns as-is",
+			in:   "not a url",
+			want: "not a url",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RedactURL(tc.in); got != tc.want {
+				t.Errorf("RedactURL(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTruncateRunes(t *testing.T) {
 	cases := []struct {
 		in   string

@@ -134,6 +134,8 @@ func (m *Manager) Dispatch(ev Event) {
 	}
 	select {
 	case m.queue <- ev:
+		log.Debug("notify: queued",
+			"kind", ev.Kind, "to", ev.ToUserID, "from", ev.FromUserID)
 	default:
 		log.Warn("notify: queue full, dropping event",
 			"kind", ev.Kind, "to", ev.ToUserID, "from", ev.FromUserID)
@@ -162,22 +164,56 @@ func (m *Manager) worker(ctx context.Context) {
 //
 // Returns nil on 2xx/3xx, an error on transport failure or 4xx/5xx
 // (with a short body excerpt to surface receiver-side complaints like
-// Discord's "embed exceeds maximum size of 6000").
+// Discord's "embed exceeds maximum size of 6000"). The error message
+// has the webhook URL's last path segment (the secret) redacted so a
+// user pasting it back doesn't accidentally publish their token.
 func (m *Manager) SendTest(ctx context.Context, target *store.NotifyTarget, ev Event) error {
+	t0 := time.Now()
 	req, err := buildRequest(ctx, target, ev)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return err
+		// http.Client wraps the error with the full URL via *url.Error;
+		// strip the secret before bubbling up.
+		log.Warn("notify: test post failed",
+			"target", target.ID, "url", RedactURL(target.URL),
+			"err", scrubURL(err.Error(), target.URL))
+		return scrubURLErr(err, target.URL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		excerpt, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		log.Warn("notify: test target rejected",
+			"target", target.ID, "url", RedactURL(target.URL),
+			"status", resp.StatusCode)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(excerpt)))
 	}
+	log.Info("notify: test delivered",
+		"target", target.ID, "url", RedactURL(target.URL),
+		"status", resp.StatusCode, "duration", time.Since(t0))
 	return nil
+}
+
+// scrubURL replaces every occurrence of rawURL inside a string with its
+// redacted form. Used to clean error messages that net/http builds with
+// the full URL embedded (e.g. `Post "https://...": context deadline ...`).
+func scrubURL(s, rawURL string) string {
+	if rawURL == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, rawURL, RedactURL(rawURL))
+}
+
+// scrubURLErr is the error variant: re-wraps the error with its rendered
+// message scrubbed. Loses the original error type (no errors.Is matching),
+// which is fine for the user-facing flash row.
+func scrubURLErr(err error, rawURL string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s", scrubURL(err.Error(), rawURL))
 }
 
 func (m *Manager) deliver(ctx context.Context, ev Event) {
@@ -203,6 +239,7 @@ func (m *Manager) deliver(ctx context.Context, ev Event) {
 }
 
 func (m *Manager) post(ctx context.Context, t *store.NotifyTarget, ev Event) {
+	t0 := time.Now()
 	req, err := buildRequest(ctx, t, ev)
 	if err != nil {
 		log.Warn("notify: build request", "target", t.ID, "err", err)
@@ -211,14 +248,21 @@ func (m *Manager) post(ctx context.Context, t *store.NotifyTarget, ev Event) {
 	resp, err := m.client.Do(req)
 	if err != nil {
 		log.Warn("notify: post failed",
-			"target", t.ID, "url", t.URL, "kind", ev.Kind, "err", err)
+			"target", t.ID, "url", RedactURL(t.URL), "kind", ev.Kind,
+			"err", scrubURL(err.Error(), t.URL))
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		log.Warn("notify: target rejected",
-			"target", t.ID, "url", t.URL, "status", resp.StatusCode, "kind", ev.Kind)
+			"target", t.ID, "url", RedactURL(t.URL),
+			"status", resp.StatusCode, "kind", ev.Kind)
+		return
 	}
+	log.Info("notify: delivered",
+		"target", t.ID, "url", RedactURL(t.URL), "kind", ev.Kind,
+		"to", ev.ToUserID, "from", ev.FromUserID,
+		"status", resp.StatusCode, "duration", time.Since(t0))
 }
 
 func prefsAllow(p store.NotifyPrefs, k Kind) bool {

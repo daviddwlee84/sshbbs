@@ -217,16 +217,41 @@ Headers: `Content-Type: application/json`, `User-Agent: sshbbs-notify/1`.
 Limits: title ≤ 256 runes, description ≤ 4096 runes — both truncated
 with `…` rather than byte-cut, so CJK glyphs aren't corrupted.
 
+## What's logged on the server
+
+Every dispatch leaves a trail in the BBS log. URLs are redacted to
+hide the credential-bearing last path segment (Discord token / Slack
+signing key / ntfy topic / apprise config key).
+
+| Level | Message                       | Fired when                                          |
+|-------|-------------------------------|-----------------------------------------------------|
+| DEBUG | `notify: queued`              | Event accepted into the dispatch queue              |
+| INFO  | `notify: delivered`           | 2xx/3xx — success, includes target ID + duration    |
+| INFO  | `notify: test delivered`      | `T 測試` succeeded                                  |
+| WARN  | `notify: queue full, dropping event` | Queue full (slow upstream + many concurrent events) |
+| WARN  | `notify: build request`       | Encoder failed (very unusual — JSON marshal error)  |
+| WARN  | `notify: post failed`         | Transport-layer failure (DNS / TCP / TLS / timeout) |
+| WARN  | `notify: target rejected`     | 4xx/5xx from receiver                               |
+| WARN  | `notify: test post failed`    | Same as `post failed` but during `T 測試`           |
+| WARN  | `notify: test target rejected`| Same as `target rejected` but during `T 測試`       |
+
+Tail the server log while triggering events to confirm where in the
+chain something is breaking. Successes log at INFO so they show up
+under the default level; the queue entry is DEBUG-only to avoid
+flooding under load.
+
 ## Troubleshooting
 
 | Symptom                                | Where to look                                                   |
 |----------------------------------------|------------------------------------------------------------------|
-| No notification fires at all           | Confirm the row in `user_notif_targets` exists and `enabled = 1`; confirm the matching pref toggle is on in 通知設定. |
-| BBS log says `notify: target rejected` (4xx) | Webhook returned an error. `curl -v` the same URL with the same JSON to see the receiver's complaint. Common Discord 400: payload didn't match the embed schema (auto-detect should prevent this — file a bug if you see it). |
-| BBS log says `notify: post failed`     | Network error / DNS / TLS. From the BBS host: `curl -v <target-url>` with a sample payload. |
-| Discord receives nothing but apprise-style URL works | URL probably doesn't match the auto-detect prefix. Confirm it starts with `https://discord.com/api/webhooks/` — variants like `discordapp.com` are also detected, but a CDN proxy in front of Discord might break detection. |
+| `T 測試` fails with `context deadline exceeded (Client.Timeout exceeded while awaiting headers)` on macOS | DNS poisoning + Clash for Windows proxy mismatch. macOS GUI proxy doesn't propagate to Go binaries. Set `HTTPS_PROXY=http://127.0.0.1:7891` (or your Clash port) plus `NO_PROXY=localhost,127.0.0.1,...` in the shell that runs BBS. Full diagnosis + commands in [`pitfalls/notify-context-deadline-exceeded-while-awaiting-headers.md`](../pitfalls/notify-context-deadline-exceeded-while-awaiting-headers.md). |
+| No notification fires, no log either   | Pref toggle for that event kind is off. Check 個人設定 → 通知設定 top half. |
+| BBS log says `notify: target rejected` (4xx) | Webhook returned an error. `curl -v` the same URL with the same JSON shape to see the receiver's complaint. Common Discord 400: payload didn't match the embed schema — auto-detect should prevent this, file a bug if you see it. |
+| BBS log says `notify: post failed`     | Network error / DNS / TLS. Run the macOS-proxy diagnostic above first if applicable; otherwise `curl -v <target-url>` with a sample payload from the BBS host. |
+| Discord receives nothing but apprise-style URL works | URL probably doesn't match the auto-detect prefix. Confirm it starts with `https://discord.com/api/webhooks/` — variants like `discordapp.com` / `canary.discord.com` / `ptb.discord.com` are also detected. A CDN proxy in front of Discord would break detection — point directly at Discord. |
 | Notification fires while user is online | `only_when_offline` is unchecked. Tick it in 通知設定. |
 | Same event fires twice                 | Two enabled targets pointing at the same upstream. Check the target list. |
+| Webhook token visible in error message / screenshot | `RedactURL` (this PR) hides the last path segment from logs and the flash row. If you see a full token, you're on a build older than 22e4f63 — pull and rebuild. |
 
 ## Architecture decision: webhook indirection, not embedded library
 

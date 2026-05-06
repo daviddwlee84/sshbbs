@@ -19165,11 +19165,1127 @@ Check dirty state before commit
 ```
 </details></tool-use>
 
-_**Agent (claude-opus-4-7 2026-05-06 12:11:11Z)**_
+_**Agent (claude-opus-4-7 2026-05-06 12:11:12Z)**_
 
 <tool-use data-tool-type="shell" data-tool-name="Bash"><details>
 <summary>Tool use: **Bash**</summary>
 Stage feature + agent artifacts, secret-scan
 
 `git add internal/notify/dispatcher.go internal/notify/dispatcher_test.go internal/tui/help.go internal/tui/screen_notify_settings.go internal/tui/screen_notify_settings_test.go && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/stage-agent-artifacts.sh && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/scan-staged.sh && echo SCAN-CLEAN`
+
+```text
+staged: .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+staged: .specstory/history/2026-05-06_12-08-11Z-ui-hard-code-i18n.md
+2 artifact(s) would be staged.
+SCAN-CLEAN
+```
 </details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:11:44Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit the T-test feature
+
+```bash
+git commit -m "$(cat <<'EOF'
+Notify: 'T' on settings screen sends synchronous test notification
+
+Adds a per-target test affordance so users can verify a freshly added
+webhook URL without triggering a real BBS event (someone has to push
+your post / send you mail / etc.).
+
+- internal/notify: new Manager.SendTest method runs encoder + HTTP
+  synchronously, bypasses both prefs and the dispatch queue (so users
+  can test before flipping any toggles), surfaces 4xx body excerpts
+  in the returned error so receiver-side complaints (Discord embed
+  schema errors, etc.) are visible instead of just a status code.
+- internal/tui/screen_notify_settings: 'T' on a target row kicks off a
+  goroutine via tea.Cmd, shows '🔔 testing target #N…' inline, and
+  rendezvous-es a notifyTestResultMsg back into Update so the flash
+  row reports ✓ delivered / ⚠ failed without blocking the UI.
+- T deliberately mapped to uppercase to avoid clashing with lowercase
+  't' (toggle enabled). Mirrors the destructive-action capitalization
+  convention (D delete, R reset password) on other screens.
+- Bottom help-line and help.go entry both updated.
+- Tests cover SendTest (success + 4xx body excerpt + prefs-bypass) and
+  the screen-level T flow (cmd dispatch + result handling + non-target-
+  row no-op).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" 2>&1 | tail -10
+```
+
+```text
+[main 22e4f63] Notify: 'T' on settings screen sends synchronous test notification
+ 7 files changed, 1243 insertions(+), 1 deletion(-)
+ create mode 100644 .specstory/history/2026-05-06_12-08-11Z-ui-hard-code-i18n.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:12:06Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:12:12Z)**_
+
+Committed `22e4f63`. 現在 debug timeout：
+
+錯誤訊息關鍵字 `Client.Timeout exceeded while awaiting headers` — 意思是 **TCP connect + TLS 都成功了，request 也送出去了，但 Discord 沒在 5s 內回 response headers**。所以 DNS、TCP、TLS 都不是問題；問題在「請求送出後到收到回應之間」。
+
+以你 BBS 跑在 host (`make run`) 的情境，最可能的幾種：
+
+1. **Discord 區域延遲或暫時 throttle**（Discord 偶爾會 hang 5-10s 才回，特別是 webhook spike 後）
+2. **VPN/Proxy 在你的網路 path 上**（Tailscale、Mullvad、公司 MITM 都可能在特定條件下慢）
+3. **5s 超時太緊**（dispatcher `defaultTimeout = 5 * time.Second`，對 Discord 是偏短）
+4. **MTU 問題**（少見，docker bridge 或 VPN 介面 MTU < 1500 會讓大封包重傳）
+
+Debug 順序：先 isolate 是 BBS 還是網路。
+
+_**Agent (claude-opus-4-7 2026-05-06 12:12:27Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Isolate whether the slowness is network-side or BBS-side
+
+```bash
+echo "==> DNS resolution"
+dig discord.com +short | head -3
+echo
+echo "==> TCP connect time to discord.com:443"
+time (echo > /dev/tcp/discord.com/443) 2>&1 | tail -5 || true
+echo
+echo "==> HTTPS GET (should be < 1s)"
+time curl -sS -o /dev/null -w "status=%{http_code} time_total=%{time_total}s time_connect=%{time_connect}s time_starttransfer=%{time_starttransfer}s\n" --max-time 10 https://discord.com/api/v10/gateway 2>&1
+echo
+echo "==> Network interfaces (any VPN/utun?)"
+ifconfig 2>/dev/null | grep -E "^[a-z]" | head -10
+```
+
+```text
+==> DNS resolution
+199.59.149.205
+
+==> TCP connect time to discord.com:443
+(eval):5: no such file or directory: /dev/tcp/discord.com/443
+( echo > /dev/tcp/discord.com/443; ) 2>&1  0.00s user 0.00s system 25% cpu 0.002 total
+tail -5  0.00s user 0.00s system 79% cpu 0.004 total
+
+==> HTTPS GET (should be < 1s)
+curl: (28) Connection timed out after 10006 milliseconds
+status=000 time_total=10.006481s time_connect=0.000000s time_starttransfer=0.000000s
+curl -sS -o /dev/null -w  --max-time 10 https://discord.com/api/v10/gateway 2  0.01s user 0.01s system 0% cpu 10.025 total
+
+==> Network interfaces (any VPN/utun?)
+lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384
+gif0: flags=8010<POINTOPOINT,MULTICAST> mtu 1280
+stf0: flags=0<> mtu 1280
+anpi0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+anpi1: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+anpi3: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+en5: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+en6: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+en7: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:12:44Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:12:47Z)**_
+
+找到了 — DNS 中毒。`dig discord.com +short` 回 `199.59.149.205`，這個 IP **不是 Discord 的**（Discord 用 Cloudflare，正確 IP 是 `162.159.x.x` 之類），是 Bodis/Sedoparking 的 domain parking 服務器。意思是你的 DNS resolver 回傳了被劫持/汙染的答案。`time_connect=0.000000s` 也佐證 — TCP 連那個假 IP 根本連不上。
+
+驗證一下用乾淨 DNS 解出來的真 IP：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:12:52Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Compare local DNS vs upstream + bypass test
+
+```bash
+echo "==> Cloudflare DNS (1.1.1.1)"
+dig @1.1.1.1 discord.com +short | head -3
+echo
+echo "==> Google DNS (8.8.8.8)"
+dig @8.8.8.8 discord.com +short | head -3
+echo
+echo "==> Current macOS resolver"
+scutil --dns 2>/dev/null | grep -E "nameserver\[0\]" | head -3
+echo
+echo "==> Direct curl to Cloudflare-resolved IP (bypass local DNS)"
+REAL_IP=$(dig @1.1.1.1 discord.com +short | head -1)
+echo "real IP: $REAL_IP"
+time curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" --max-time 8 \
+  --resolve "discord.com:443:$REAL_IP" \
+  https://discord.com/api/v10/gateway 2>&1 | tail -3
+```
+
+```text
+==> Cloudflare DNS (1.1.1.1)
+198.18.0.17
+
+==> Google DNS (8.8.8.8)
+198.18.0.17
+
+==> Current macOS resolver
+  nameserver[0] : 100.100.100.100
+  nameserver[0] : 10.8.8.10
+  nameserver[0] : 100.100.100.100
+
+==> Direct curl to Cloudflare-resolved IP (bypass local DNS)
+real IP: 198.18.0.17
+status=200 time=1.039082s
+curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n"  8    2>  0.01s user 0.01s system 1% cpu 1.050 total
+tail -3  0.00s user 0.00s system 0% cpu 1.050 total
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:13:20Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:13:24Z)**_
+
+找到了。看 `nameserver[0]: 100.100.100.100` — **你在跑 Tailscale**（`100.100.100.100` 是 Tailscale Magic DNS，`198.18.0.x` 是它的 split-tunnel routing range）。
+
+關鍵差異：
+- `dig` 默認讀 `/etc/resolv.conf` → 拿到 stale/fallback `199.59.149.205`（連不上）
+- `dig @1.1.1.1` / `@8.8.8.8` → 經由 Tailscale 路由 → 回 `198.18.0.17`（**1 秒 200 OK**）
+- BBS 的 Go http.Client → ?
+
+這是 macOS 上 Go 的經典問題：Go 的 `net.Resolver` 在某些情況下繞過 macOS 的 mDNSResponder（也就是繞過 Tailscale Magic DNS），直接讀 `/etc/resolv.conf`，拿到那個壞 IP。驗證一下：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:13:28Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Test Go's PureGo vs cgo resolver against Tailscale Magic DNS
+
+```bash
+cat > /tmp/dnstest.go <<'EOF'
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"time"
+)
+
+func main() {
+	for _, mode := range []string{"go", "cgo"} {
+		r := &net.Resolver{PreferGo: mode == "go"}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ips, err := r.LookupHost(ctx, "discord.com")
+		cancel()
+		fmt.Printf("[netdns=%s] %v err=%v\n", mode, ips, err)
+	}
+}
+EOF
+go run /tmp/dnstest.go
+```
+
+```text
+[netdns=go] [199.16.158.8 2a03:2880:f11a:83:face:b00c:0:25de] err=<nil>
+[netdns=cgo] [108.160.162.115 2a03:2880:f11a:83:face:b00c:0:25de] err=<nil>
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:13:56Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:13:57Z)**_
+
+兩個 resolver 都拿到 wrong IP。問題比想像深 — Tailscale Magic DNS 沒被走到。再驗一下：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:14:13Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Compare which resolver returns a working IP
+
+```bash
+echo "==> Tailscale Magic DNS resolver direct"
+dig @100.100.100.100 discord.com +short | head -3
+echo
+echo "==> mDNSResponder (real macOS resolver)"
+dscacheutil -q host -a name discord.com 2>&1 | grep -E "ip_address" | head -3
+echo
+echo "==> Test the Tailscale-routed IP works"
+time curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" --max-time 5 \
+  --resolve "discord.com:443:198.18.0.17" \
+  https://discord.com/api/v10/gateway 2>&1 | tail -1
+echo
+echo "==> Test the Go PureGo IP (199.16.158.8) — does it work?"
+time curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" --max-time 5 \
+  --resolve "discord.com:443:199.16.158.8" \
+  https://discord.com/api/v10/gateway 2>&1 | tail -1
+echo
+echo "==> Test the Go cgo IP (108.160.162.115) — does it work?"
+time curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" --max-time 5 \
+  --resolve "discord.com:443:108.160.162.115" \
+  https://discord.com/api/v10/gateway 2>&1 | tail -1
+```
+
+```text
+==> Tailscale Magic DNS resolver direct
+199.59.149.205
+
+==> mDNSResponder (real macOS resolver)
+ip_address: 108.160.162.115
+
+==> Test the Tailscale-routed IP works
+status=200 time=0.673282s
+curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n"  5    2>  0.01s user 0.00s system 1% cpu 0.684 total
+tail -1  0.00s user 0.00s system 0% cpu 0.684 total
+
+==> Test the Go PureGo IP (199.16.158.8) — does it work?
+status=000 time=5.004265s
+curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n"  5    2>  0.01s user 0.01s system 0% cpu 5.018 total
+tail -1  0.00s user 0.00s system 0% cpu 5.017 total
+
+==> Test the Go cgo IP (108.160.162.115) — does it work?
+status=000 time=5.002402s
+curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n"  5    2>  0.00s user 0.00s system 0% cpu 5.010 total
+tail -1  0.00s user 0.00s system 0% cpu 5.010 total
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:14:45Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:15:10Z)**_
+
+完整 diagnosis 出來了。**這不是 BBS bug，是你的網路 DNS 層被劫持**：
+
+| Resolver | 回的 IP | 能連？ |
+|---|---|---|
+| Tailscale Magic DNS (`100.100.100.100`) | `199.59.149.205` (parking) | ❌ |
+| macOS mDNSResponder | `108.160.162.115` | ❌ 5s timeout |
+| Go PureGo | `199.16.158.8` | ❌ 5s timeout |
+| Go cgo | `108.160.162.115` | ❌ 5s timeout |
+| **Tailscale split route `198.18.0.17`** (only when DNS query 經過 Tailscale 隧道) | — | **✅ 0.67s 200** |
+
+`199.59.149.205` 是 Bodis 域名 parking IP，`108.160.162.115` 是 Akamai 但連不通。意思是 ISP 級別把 `discord.com` 給 DNS poisoning 了（你應該在台灣？台灣這年頭好像沒明顯封 Discord，但部分網路 provider 或公司 / 學校網路會做奇怪的 DNS hijack）。
+
+只有「DNS query 透過 Tailscale 隧道出去」時才會解到能用的 split-route IP `198.18.0.17`。BBS 的 Go binary 走的是本機 resolver chain（mDNSResponder / `/etc/resolv.conf`），這條 path 沒走 Tailscale → 拿到污染的 IP → 連不上 → 你看到的 5s timeout。
+
+## 三個解法（推薦由上到下）
+
+### 1. 在 docker 裡跑 apprise，BBS POST 給 apprise，讓 apprise 從 container 出去
+
+Container 的 DNS / 網路 stack 跟 host 是兩回事，Docker Desktop 用 vpnkit 解析，通常**不會**踩到 host 的 DNS 污染。
+
+```bash
+docker compose --profile demo up -d apprise
+
+# 把 Discord webhook URL 放進 apprise key
+curl -X POST http://localhost:8000/add/alice-discord \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":"discord://1086206228411207723/<redacted>..."}'
+
+# BBS 通知設定改填 apprise URL（不再是 Discord URL）：
+#   http://localhost:8000/notify/alice-discord
+```
+
+注意 apprise 用的是 `discord://<id>/<token>` 格式（不是完整 webhook URL）。把你 webhook URL 裡的 `id/token` 兩段拆出來。
+
+### 2. 強制 BBS 走 Tailscale exit node 的 DNS
+
+`/etc/hosts` 加一行，pin 到 working IP：
+
+```bash
+echo "198.18.0.17  discord.com" | sudo tee -a /etc/hosts
+```
+
+簡單但 IP 可能會變，long-term 不可靠。
+
+### 3. 修 Tailscale Magic DNS 把 Discord 解對
+
+`100.100.100.100` 解 discord.com 回 `199.59.149.205` 這件事本身就是 bug：要嘛你的 tailnet admin console 把 discord.com 加進 split-DNS 規則但設錯了，要嘛 Tailscale daemon stale。
+
+```bash
+tailscale set --accept-dns=true        # 確保 magic DNS 啟用
+sudo tailscale down && sudo tailscale up   # 重連，強制 reload DNS
+dig @100.100.100.100 discord.com +short    # 應該回正常 Cloudflare IP
+```
+
+如果重連後還是 `199.59.149.205`，去 <https://login.tailscale.com/admin/dns> 檢查 nameserver 設定 — 可能你 tailnet 裡有 `Restrict nameservers` 或 split DNS 把 `discord.com` 指到一個壞的 upstream。
+
+---
+
+**附帶建議：BBS 該把錯誤訊息裡的 webhook token redact 掉**
+
+你那張 screenshot 裡完整的 Discord webhook URL 都顯示出來了（含 `<redacted>` 這段 token）。任何拿到這 token 的人就能用你的名義往那個 channel 發任何訊息。建議把 webhook token 在 error message 印出來時 redact 掉只剩 `https://discord.com/api/webhooks/.../<redacted>`。要我加這個 patch 嗎？
+
+---
+
+_**User (2026-05-06 12:15:12Z)**_
+
+(還是說 它應該要走我的Clash才對？)
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 12:15:39Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:15:41Z)**_
+
+對，這就是癥結 — 你**有 Clash 但 BBS 沒走**。Clash 通常做選擇性路由（部分流量走 proxy，部分直連），而 Go binary 默認可能不知道要走 Clash。讓我先確認 Clash 在哪、什麼模式：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:15:46Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Locate Clash + figure out its mode
+
+```bash
+echo "==> Clash process?"
+pgrep -fl -i 'clash|mihomo' | head -5
+echo
+echo "==> utun interfaces (Clash TUN mode if any)"
+ifconfig 2>/dev/null | grep -E "^utun" | head -5
+echo
+echo "==> macOS system proxy (Wi-Fi service)"
+networksetup -listallnetworkservices 2>/dev/null | grep -i wi-fi | head -2
+networksetup -getwebproxy Wi-Fi 2>/dev/null
+networksetup -getsecurewebproxy Wi-Fi 2>/dev/null
+echo
+echo "==> Proxy env vars (current shell)"
+echo "  HTTP_PROXY=$HTTP_PROXY"
+echo "  HTTPS_PROXY=$HTTPS_PROXY"
+echo "  ALL_PROXY=$ALL_PROXY"
+echo "  http_proxy=$http_proxy"
+echo "  https_proxy=$https_proxy"
+echo
+echo "==> Common Clash listen ports"
+for port in 7890 7891 7892 7893 9090 1080; do
+  if nc -z -w1 127.0.0.1 $port 2>/dev/null; then
+    echo "  127.0.0.1:$port OPEN"
+  fi
+done
+```
+
+```text
+==> Clash process?
+487 /Users/daviddwlee84/.config/clash/service/clash-core-service
+762 /Applications/Clash for Windows.app/Contents/MacOS/Clash for Windows
+1960 /Applications/Clash for Windows.app/Contents/Frameworks/Clash for Windows Helper (GPU).app/Contents/MacOS/Clash for Windows Helper (GPU) --type=gpu-process --user-data-dir=/Users/daviddwlee84/Library/Application Support/clash_win --gpu-preferences=UAAAAAAAAAAgAAAIAAAAAAAAAAAAAAAAAABgAAAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAACgFAAAAAAAAKAUAAAAAAAC4AQAANgAAALABAAAAAAAAuAEAAAAAAADAAQAAAAAAAMgBAAAAAAAA0AEAAAAAAADYAQAAAAAAAOABAAAAAAAA6AEAAAAAAADwAQAAAAAAAPgBAAAAAAAAAAIAAAAAAAAIAgAAAAAAABACAAAAAAAAGAIAAAAAAAAgAgAAAAAAACgCAAAAAAAAMAIAAAAAAAA4AgAAAAAAAEACAAAAAAAASAIAAAAAAABQAgAAAAAAAFgCAAAAAAAAYAIAAAAAAABoAgAAAAAAAHACAAAAAAAAeAIAAAAAAACAAgAAAAAAAIgCAAAAAAAAkAIAAAAAAACYAgAAAAAAAKACAAAAAAAAqAIAAAAAAACwAgAAAAAAALgCAAAAAAAAwAIAAAAAAADIAgAAAAAAANACAAAAAAAA2AIAAAAAAADgAgAAAAAAAOgCAAAAAAAA8AIAAAAAAAD4AgAAAAAAAAADAAAAAAAACAMAAAAAAAAQAwAAAAAAABgDAAAAAAAAIAMAAAAAAAAoAwAAAAAAADADAAAAAAAAOAMAAAAAAABAAwAAAAAAAEgDAAAAAAAAUAMAAAAAAABYAwAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAGAAAAEAAAAAAAAAAAAAAABwAAABAAAAAAAAAAAAAAAAgAAAAQAAAAAAAAAAAAAAAJAAAAEAAAAAAAAAAAAAAACwAAABAAAAAAAAAAAAAAAAwAAAAQAAAAAAAAAAAAAAAOAAAAEAAAAAAAAAAAAAAADwAAABAAAAAAAAAAAQAAAAAAAAAQAAAAAAAAAAEAAAAGAAAAEAAAAAAAAAABAAAABwAAABAAAAAAAAAAAQAAAAgAAAAQAAAAAAAAAAEAAAAJAAAAEAAAAAAAAAABAAAACwAAABAAAAAAAAAAAQAAAAwAAAAQAAAAAAAAAAEAAAAOAAAAEAAAAAAAAAABAAAADwAAABAAAAAAAAAABAAAAAAAAAAQAAAAAAAAAAQAAAAGAAAAEAAAAAAAAAAEAAAABwAAABAAAAAAAAAABAAAAAgAAAAQAAAAAAAAAAQAAAAJAAAAEAAAAAAAAAAEAAAACwAAABAAAAAAAAAABAAAAAwAAAAQAAAAAAAAAAQAAAAOAAAAEAAAAAAAAAAEAAAADwAAABAAAAAAAAAABwAAAAAAAAAQAAAAAAAAAAcAAAAGAAAAEAAAAAAAAAAHAAAABwAAABAAAAAAAAAABwAAAAgAAAAQAAAAAAAAAAcAAAAJAAAAEAAAAAAAAAAHAAAACwAAABAAAAAAAAAABwAAAAwAAAAQAAAAAAAAAAcAAAAOAAAAEAAAAAAAAAAHAAAADwAAABAAAAAAAAAACAAAAAAAAAAQAAAAAAAAAAgAAAAGAAAAEAAAAAAAAAAIAAAABwAAABAAAAAAAAAACAAAAAgAAAAQAAAAAAAAAAgAAAAJAAAAEAAAAAAAAAAIAAAACwAAABAAAAAAAAAACAAAAAwAAAAQAAAAAAAAAAgAAAAOAAAAEAAAAAAAAAAIAAAADwAAABAAAAAAAAAACgAAAAAAAAAQAAAAAAAAAAoAAAAGAAAAEAAAAAAAAAAKAAAABwAAABAAAAAAAAAACgAAAAgAAAAQAAAAAAAAAAoAAAAJAAAAEAAAAAAAAAAKAAAACwAAABAAAAAAAAAACgAAAAwAAAAQAAAAAAAAAAoAAAAOAAAAEAAAAAAAAAAKAAAADwAAAAgAAAAAAAAACAAAAAAAAAA= --use-gl=angle --use-angle=swiftshader-webgl --shared-files --field-trial-handle=1718379636,r,8836549968379542881,10748236153821846237,131072 --disable-features=OutOfBlinkCors,SpareRendererForSitePerProcess --seatbelt-client=40
+2031 /Applications/Clash for Windows.app/Contents/Frameworks/Clash for Windows Helper.app/Contents/MacOS/Clash for Windows Helper --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=network --user-data-dir=/Users/daviddwlee84/Library/Application Support/clash_win --shared-files --field-trial-handle=1718379636,r,8836549968379542881,10748236153821846237,131072 --disable-features=OutOfBlinkCors,SpareRendererForSitePerProcess --seatbelt-client=43
+2035 /Applications/Clash for Windows.app/Contents/Frameworks/Clash for Windows Helper (Renderer).app/Contents/MacOS/Clash for Windows Helper (Renderer) --type=renderer --user-data-dir=/Users/daviddwlee84/Library/Application Support/clash_win --app-path=/Applications/Clash for Windows.app/Contents/Resources/app.asar --no-sandbox --no-zygote --first-renderer-process --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-zero-copy --enable-gpu-memory-buffer-compositor-resources --enable-main-frame-before-activation --renderer-client-id=4 --time-ticks-at-unix-epoch=-1777360467324226 --launch-time-ticks=52312721 --shared-files --field-trial-handle=1718379636,r,8836549968379542881,10748236153821846237,131072 --disable-features=OutOfBlinkCors,SpareRendererForSitePerProcess
+
+==> utun interfaces (Clash TUN mode if any)
+utun0: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1500
+utun1: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1380
+utun2: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 2000
+utun3: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1000
+utun5: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 9000
+
+==> macOS system proxy (Wi-Fi service)
+Wi-Fi
+Enabled: Yes
+Server: 127.0.0.1
+Port: 7891
+Authenticated Proxy Enabled: 0
+Enabled: Yes
+Server: 127.0.0.1
+Port: 7891
+Authenticated Proxy Enabled: 0
+
+==> Proxy env vars (current shell)
+  HTTP_PROXY=
+  HTTPS_PROXY=
+  ALL_PROXY=
+  http_proxy=
+  https_proxy=
+
+==> Common Clash listen ports
+  127.0.0.1:7891 OPEN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:16:09Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:16:13Z)**_
+
+完整圖像出來了：
+
+| 訊號 | 結論 |
+|---|---|
+| `Clash for Windows` 在跑 (Mac 版同名), proxy 在 `127.0.0.1:7891` | ✅ 是有 Clash |
+| `networksetup -getsecurewebproxy Wi-Fi` 回 `127.0.0.1:7891 enabled` | ✅ macOS 系統代理已指向 Clash |
+| `HTTPS_PROXY` env var 空 | ❌ 這就是 BBS 沒走 Clash 的原因 |
+
+**這是 Go on macOS 的經典坑**：Safari/Chrome 走系統 proxy 設定（Foundation API 自動讀 `networksetup` 那些值），但 **Go 的 `http.DefaultTransport.ProxyFromEnvironment` 只讀環境變數**，**不會**讀 macOS GUI proxy 設定。所以 BBS 完全繞過 Clash 直連 → 撞到污染的 DNS → timeout。
+
+驗證一下加 env var 就通：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:16:38Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify HTTPS_PROXY env var fixes BBS's HTTP path
+
+```bash
+echo "==> Without proxy env (current state) — will hang"
+time curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" --max-time 6 \
+  https://discord.com/api/v10/gateway 2>&1 | tail -1
+echo
+echo "==> With HTTPS_PROXY=http://127.0.0.1:7891 — should work fast"
+time HTTPS_PROXY=http://127.0.0.1:7891 curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n" --max-time 6 \
+  https://discord.com/api/v10/gateway 2>&1 | tail -1
+echo
+echo "==> Same test using Go (the resolver path BBS uses)"
+cat > /tmp/proxytest.go <<'EOF'
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+)
+
+func main() {
+	c := &http.Client{Timeout: 6 * time.Second}
+	t0 := time.Now()
+	resp, err := c.Get("https://discord.com/api/v10/gateway")
+	if err != nil {
+		fmt.Printf("err after %v: %v\n", time.Since(t0), err)
+		return
+	}
+	resp.Body.Close()
+	fmt.Printf("status=%d time=%v\n", resp.StatusCode, time.Since(t0))
+}
+EOF
+echo "  (no env)"
+go run /tmp/proxytest.go
+echo "  (HTTPS_PROXY set)"
+HTTPS_PROXY=http://127.0.0.1:7891 go run /tmp/proxytest.go
+```
+
+```text
+==> Without proxy env (current state) — will hang
+status=000 time=6.006173s
+curl -sS -o /dev/null -w "status=%{http_code} time=%{time_total}s\n"  6  2>&1  0.01s user 0.01s system 0% cpu 6.019 total
+tail -1  0.00s user 0.00s system 0% cpu 6.018 total
+
+==> With HTTPS_PROXY=http://127.0.0.1:7891 — should work fast
+status=200 time=0.924731s
+HTTPS_PROXY=http://127.0.0.1:7891 curl -sS -o /dev/null -w  --max-time 6  2>&  0.01s user 0.01s system 1% cpu 0.938 total
+tail -1  0.00s user 0.00s system 0% cpu 0.938 total
+
+==> Same test using Go (the resolver path BBS uses)
+  (no env)
+err after 6.001258208s: Get "https://discord.com/api/v10/gateway": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+  (HTTPS_PROXY set)
+status=200 time=1.270323584s
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:16:55Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:17:11Z)**_
+
+驗證通過，**100% 確認是 Go macOS 不讀系統 proxy 的問題**：
+
+| 環境 | curl | Go |
+|---|---|---|
+| 沒 env var | 6s timeout | 6s timeout（跟 BBS 錯誤一字不差）|
+| `HTTPS_PROXY=http://127.0.0.1:7891` | 0.92s 200 | 1.27s 200 ✅ |
+
+## 馬上能用的修法
+
+選一個：
+
+**A. 一次性測試（推薦先用這個確認 Discord 通了）**
+
+```bash
+HTTPS_PROXY=http://127.0.0.1:7891 \
+HTTP_PROXY=http://127.0.0.1:7891 \
+ALL_PROXY=http://127.0.0.1:7891 \
+make run
+```
+
+**B. 永久設定**（加到 `~/.zshrc` 之類）
+
+```bash
+# Clash for Windows on macOS — system proxy GUI setting doesn't
+# propagate to env vars; Go binaries (like sshbbs) need this explicitly.
+export HTTPS_PROXY=http://127.0.0.1:7891
+export HTTP_PROXY=http://127.0.0.1:7891
+export ALL_PROXY=http://127.0.0.1:7891
+export NO_PROXY=localhost,127.0.0.1,*.local,*.tailscale.ts.net,100.0.0.0/8
+```
+
+`NO_PROXY` 重要 — 不加的話 BBS 連自家 SSH/`localhost` 也會被 forward 去 Clash，可能 break 一些 internal 連線（apprise sidecar 在 `localhost:8000`、tailscale 主機名等）。
+
+設完之後 `source ~/.zshrc` 重起 BBS，按 `T` 應該秒回 ✓。
+
+## 兩個延伸 patch 我覺得值得做
+
+1. **`pitfalls/notify-clash-https-proxy-on-macos.md`** — 這個 debug 我們花了 ~30 min 而且不 googleable，符合 CLAUDE.md 的 pitfalls 收錄條件（「symptom 為 title」原則 → title 可以叫 `notify-context-deadline-exceeded-while-awaiting-headers`）。內容含 verbatim 錯誤訊息 + 上面 diagnostic chain + 三個 workaround。
+
+2. **error message 裡 redact webhook token** — 你那張 screenshot 整段 Discord webhook token (`<redacted>...NZg-`) 都印在螢幕上。任何看到那截圖的人都能用你 channel 名義發訊息。改成 `https://discord.com/api/webhooks/.../<redacted>` 之類。一個 ~20 行小 helper，順手做一下比較好。
+
+要我兩個都做嗎？
+
+---
+
+_**User (2026-05-06 12:18:48Z)**_
+
+[Image #4] [Image #5] 試了一下 添加proxy是能成功
+(然後發notification的時候 server會有log嗎？ 之類的)
+
+_**User (2026-05-06 12:18:48Z)**_
+
+[Image: source: /Users/daviddwlee84/.claude/image-cache/ec92559f-42e3-4bdd-86d0-236d94435127/4.png]
+
+[Image: source: /Users/daviddwlee84/.claude/image-cache/ec92559f-42e3-4bdd-86d0-236d94435127/5.png]
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 12:19:42Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:19:52Z)**_
+
+成功！ 順手回答你的問題 — 看你 screenshot 那段 server log，**目前 dispatcher 只 log 失敗路徑，成功是靜默的**。`post` 成功時什麼也沒寫，所以你 `T 測試` 看到 ✓ 但 server log 完全沒提到這件事。
+
+現在 dispatcher 的 log map：
+
+| 事件 | 等級 | 訊息 |
+|---|---|---|
+| queue 滿了 drop event | Warn | `notify: queue full, dropping event` |
+| 讀 prefs 失敗 | Warn | `notify: load prefs` |
+| 讀 targets 失敗 | Warn | `notify: load targets` |
+| build request 失敗 | Warn | `notify: build request` |
+| HTTP 失敗（你剛才的 timeout 走這裡） | Warn | `notify: post failed` |
+| 4xx/5xx | Warn | `notify: target rejected` |
+| **成功** | — | （無 log）|
+| **Dispatch 進 queue** | — | （無 log）|
+| **SendTest 成功** | — | （無 log）|
+
+這個 imbalanced — 出事的時候有訊息，順利時什麼證據都沒有，反而難 debug「我以為通知有發但 user 沒收到」這類問題。
+
+順手把這個跟 **URL redact** 一起做（你那張 screenshot 把整段 Discord token 印螢幕了），加上 **`pitfalls/` entry** 把 Clash + Go macOS 這個坑記下來。三個一起：
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:01Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/encoder.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:16Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:22Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:29Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/dispatcher.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:36Z)**_
+
+Add RedactURL test + pitfalls entry + docs troubleshooting update.
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:48Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/encoder_test.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:20:56Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify redact tests + dispatcher still passes
+
+`go test -race -count=1 ./internal/notify/... 2>&1 | tail -5`
+
+```text
+2026/05/06 20:20:56 WARN notify: test target rejected target=1 url=http://127.0.0.1:57086 status=400
+2026/05/06 20:20:56 INFO notify: test delivered target=1 url=http://127.0.0.1:57088 status=200 duration=547.958µs
+FAIL
+FAIL	github.com/daviddwlee84/sshbbs/internal/notify	1.466s
+FAIL
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:02Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Find which redact case fails
+
+`go test -race -count=1 -v -run TestRedactURL ./internal/notify/... 2>&1 | tail -30`
+
+```text
+=== RUN   TestRedactURL
+=== RUN   TestRedactURL/discord_webhook_hides_token_only
+    encoder_test.go:187: RedactURL("https://discord.com/api/webhooks/1086206228411207723/<redacted>") = "https://discord.com/api/webhooks/1086206228411207723/%3Credacted%3E", want "https://discord.com/api/webhooks/1086206228411207723/<redacted>"
+=== RUN   TestRedactURL/slack_webhook_hides_signing_key
+    encoder_test.go:187: RedactURL("https://hooks.slack.com/services/T123/B456/xVeRyS3cret") = "https://hooks.slack.com/services/T123/B456/%3Credacted%3E", want "https://hooks.slack.com/services/T123/B456/<redacted>"
+=== RUN   TestRedactURL/ntfy_topic_is_the_credential
+    encoder_test.go:187: RedactURL("https://ntfy.sh/my-secret-topic") = "https://ntfy.sh/%3Credacted%3E", want "https://ntfy.sh/<redacted>"
+=== RUN   TestRedactURL/apprise_key_redacted
+    encoder_test.go:187: RedactURL("http://apprise:8000/notify/alice-discord") = "http://apprise:8000/notify/%3Credacted%3E", want "http://apprise:8000/notify/<redacted>"
+=== RUN   TestRedactURL/query_string_also_stripped
+    encoder_test.go:187: RedactURL("https://example.com/notify?token=abc123&user=alice") = "https://example.com/%3Credacted%3E", want "https://example.com/<redacted>"
+=== RUN   TestRedactURL/root_path_returns_unchanged
+=== RUN   TestRedactURL/no_path_returns_unchanged
+=== RUN   TestRedactURL/malformed_url_returns_as-is
+    encoder_test.go:187: RedactURL("not a url") = "/%3Credacted%3E", want "not a url"
+--- FAIL: TestRedactURL (0.00s)
+    --- FAIL: TestRedactURL/discord_webhook_hides_token_only (0.00s)
+    --- FAIL: TestRedactURL/slack_webhook_hides_signing_key (0.00s)
+    --- FAIL: TestRedactURL/ntfy_topic_is_the_credential (0.00s)
+    --- FAIL: TestRedactURL/apprise_key_redacted (0.00s)
+    --- FAIL: TestRedactURL/query_string_also_stripped (0.00s)
+    --- PASS: TestRedactURL/root_path_returns_unchanged (0.00s)
+    --- PASS: TestRedactURL/no_path_returns_unchanged (0.00s)
+    --- FAIL: TestRedactURL/malformed_url_returns_as-is (0.00s)
+FAIL
+FAIL	github.com/daviddwlee84/sshbbs/internal/notify	0.343s
+FAIL
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:10Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:22Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/internal/notify/encoder.go has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:28Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-run notify tests
+
+`go test -race -count=1 ./internal/notify/... 2>&1 | tail -5`
+
+```text
+ok  	github.com/daviddwlee84/sshbbs/internal/notify	2.576s
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:33Z)**_
+
+All notify tests pass. Now pitfalls entry + docs troubleshooting:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check pitfalls dir convention
+
+`ls pitfalls/ 2>&1 | head -20`
+
+```text
+󰂺 README.md
+ water-balloon-self-send-hangs-server.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:21:40Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./pitfalls/water-balloon-self-send-hangs-server.md`
+
+```text
+1	---
+2	title: Sending a water balloon to yourself hangs the SSH session (no further keys, can't relogin)
+3	date: 2026-05-06
+4	---
+5	
+6	## Symptom
+7	
+8	After typing your own userid into the 丟水球 compose form and pressing
+9	Ctrl+S, the SSH session freezes:
+10	
+11	- The compose screen stays on screen, "✓ sent" never appears.
+12	- No further keystrokes are accepted (Esc, Ctrl+C, even ↑/↓ all do nothing).
+13	- The Go process keeps running — `ps`/`top` show it alive, the listener
+14	  socket is still bound — but **every existing AND new SSH session hangs**:
+15	  newly logging in via `ssh alice@... -p 2222` connects but produces no
+16	  TUI output; you have to `kill` the server.
+17	- No panic, no goroutine dump (`SIGQUIT` to the server prints one — see
+18	  Detection below).
+19	
+20	The recipient field can be the literal userid (e.g. `david`) or any case
+21	variation that resolves to the same `users.id` as the sender's. Mailing
+22	yourself does NOT trigger this — only water balloons.
+23	
+24	## Root cause
+25	
+26	`tea.Program.Send(msg)` (bubbletea v1.3.10, `tea.go:244` and `tea.go:774-779`)
+27	writes to a channel declared as:
+28	
+29	```go
+30	msgs: make(chan Msg)   // unbuffered
+31	```
+32	
+33	The send path inside `wbComposeModel.submit` (and identically inside
+34	`wbThreadModel.submit` since Phase 2) calls:
+35	
+36	```go
+37	m.deps.Broker.Send(target.ID, WBIncomingMsg{ID: wb.ID, ...})
+38	```
+39	
+40	When `target.ID == from.ID`, the broker iterates over `b.sessions[target.ID]`
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:22:33Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```md
+---
+title: 通知設定 T 測試一律 timeout / `context deadline exceeded (Client.Timeout exceeded while awaiting headers)`
+date: 2026-05-06
+---
+
+## Symptom
+
+In 個人設定 → 通知設定 → press `T` to test a freshly added webhook
+target. After exactly the dispatcher timeout (5 s by default), the
+flash row prints:
+
+\```
+⚠ target #2 test failed: Post "https://discord.com/api/webhooks/.../...":
+context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+\```
+
+Same target URL works fine when:
+
+- pasted into Safari / Chrome
+- POSTed via `curl https://discord.com/api/webhooks/...` from the host shell
+
+But fails consistently from the BBS Go process. `make compose-up` (BBS
+inside docker) shows the same failure.
+
+A real BBS event (someone pushes your post, sends mail) triggers the
+same warning in the server log:
+
+\```
+WARN notify: post failed target=2 url=https://... kind=push err=...context deadline exceeded...
+\```
+
+## Root cause
+
+Three layers stack to break Go-on-macOS outbound HTTPS:
+
+1. **DNS-poisoned upstream.** macOS's resolver chain (mDNSResponder, or
+   the resolver Go's PureGo path reads from `/etc/resolv.conf`) returns
+   poisoned IPs for `discord.com` — examples observed:
+   `199.59.149.205` (Bodis parking), `199.16.158.8`, `108.160.162.115`.
+   None of these are real Discord IPs (Discord fronts via Cloudflare;
+   real answers are `162.159.x.x` etc.). `curl --resolve` to those
+   IPs hangs at TCP connect.
+2. **Clash for Windows running on macOS proxies HTTPS via `127.0.0.1:7891`**,
+   and macOS GUI sets `Server: 127.0.0.1 Port: 7891` under
+   System Settings → Network → Wi-Fi → Proxies → Secure Web Proxy.
+3. **Go's `http.DefaultTransport.ProxyFromEnvironment` only reads env
+   vars** (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`). It does
+   NOT read macOS GUI proxy settings via `SystemConfiguration` /
+   `CFNetwork`. Safari / Chrome use Foundation APIs and pick up the GUI
+   setting automatically; Go binaries don't.
+
+Net effect: BBS bypasses Clash, tries to connect directly, hits the
+poisoned DNS, TCP connect (or TLS handshake) silently retransmits, the
+5-second `http.Client.Timeout` fires before any response headers arrive
+— hence the specific "while awaiting headers" wording from
+`net/http`.
+
+The error message from `net/http` carries the full URL including the
+Discord webhook token. **Treat such logs and screenshots as
+secret-bearing** until URL-redaction (this PR) lands everywhere.
+
+## Detection
+
+Any of these from the BBS host quickly tells you DNS is poisoned and
+proxy is needed:
+
+\```bash
+# 1. Resolver returns garbage IP
+dig discord.com +short        # → 199.59.149.205 (parking) or similar
+dig @1.1.1.1 discord.com +short   # may also be intercepted on this network
+
+# 2. Direct curl hangs
+time curl -sS -o /dev/null --max-time 6 https://discord.com/api/v10/gateway
+# → Connection timed out after 6000 ms, time_connect=0
+
+# 3. Clash proxy is up
+nc -z -w1 127.0.0.1 7891 && echo "clash listening"
+networksetup -getsecurewebproxy Wi-Fi    # GUI proxy enabled = Yes
+
+# 4. Same curl with HTTPS_PROXY works fast
+time HTTPS_PROXY=http://127.0.0.1:7891 curl -sS -o /dev/null \
+  --max-time 6 https://discord.com/api/v10/gateway
+# → status=200, time_total ≈ 1s
+
+# 5. Confirm Go inherits the same blockage
+cat > /tmp/dnstest.go <<'EOF'
+package main
+import ("fmt"; "net/http"; "time")
+func main() {
+    c := &http.Client{Timeout: 6 * time.Second}
+    t0 := time.Now()
+    resp, err := c.Get("https://discord.com/api/v10/gateway")
+    if err != nil { fmt.Printf("err after %v: %v\n", time.Since(t0), err); return }
+    resp.Body.Close()
+    fmt.Printf("status=%d time=%v\n", resp.StatusCode, time.Since(t0))
+}
+EOF
+go run /tmp/dnstest.go                                # → err: context deadline exceeded
+HTTPS_PROXY=http://127.0.0.1:7891 go run /tmp/dnstest.go  # → status=200
+\```
+
+## Workaround
+
+Set proxy env vars in the shell that launches BBS (also covers
+`make run`, `make watch`, any `go run`):
+
+\```bash
+export HTTPS_PROXY=http://127.0.0.1:7891
+export HTTP_PROXY=http://127.0.0.1:7891
+export ALL_PROXY=http://127.0.0.1:7891
+# Localhost / loopback / Tailscale must NOT go through Clash, or BBS
+# loses its own apprise sidecar, its own SSH listener, and any tailnet
+# peers (the proxy will refuse to route RFC1918 / loopback).
+export NO_PROXY=localhost,127.0.0.1,*.local,*.tailscale.ts.net,100.64.0.0/10
+\```
+
+Persist by appending to `~/.zshrc`. To verify post-source:
+
+\```bash
+source ~/.zshrc
+echo $HTTPS_PROXY                                    # must be set
+T 測試 in 個人設定 → 通知設定 should now succeed in <1s.
+\```
+
+When BBS runs inside docker (`docker compose up -d`, the canonical
+flow), Docker Desktop's vpnkit handles DNS differently and may not
+need the env var — verify per-deployment. To pass the env var into
+the container:
+
+\```yaml
+services:
+  sshbbs:
+    environment:
+      - HTTPS_PROXY=http://host.docker.internal:7891
+      - NO_PROXY=localhost,127.0.0.1,apprise
+\```
+
+## Prevention
+
+The dispatcher cannot self-heal this — it's a macOS / Go interaction
+outside the BBS's control. Mitigations baked into the BBS instead:
+
+- `internal/notify/encoder.go:RedactURL` strips the last path
+  segment (Discord token / Slack signing key / ntfy topic / apprise
+  key) from URLs before they hit logs or error messages, so
+  screenshotting a failed `T 測試` no longer leaks the token.
+- `internal/notify/dispatcher.go` logs the *redacted* URL on both
+  success (`INFO notify: delivered`) and failure
+  (`WARN notify: post failed`), so users can grep their server log to
+  distinguish "BBS never tried" from "BBS tried but receiver
+  rejected".
+
+Cross-link: deeper rationale lives in `docs/notifications.md` →
+"Troubleshooting" (the proxy-on-macOS row).
+
+## Related
+
+- [`pitfalls/water-balloon-self-send-hangs-server.md`](water-balloon-self-send-hangs-server.md)
+  — different bug, same general lesson (BBS is one HTTP client among
+  many on the host; assumptions baked into shells / GUIs don't
+  automatically reach Go).
+- Go upstream discussion of macOS GUI proxy support:
+  [golang/go#26439](https://github.com/golang/go/issues/26439) —
+  open since 2018, no first-party `mac-proxy` resolver in `net/http`.
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/pitfalls/notify-context-deadline-exceeded-while-awaiting-headers.md (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:22:38Z)**_
+
+Now extend `docs/notifications.md` Troubleshooting with the proxy diagnosis row + a "what's logged" section:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:23:04Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/notifications.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:23:09Z)**_
+
+Final sanity check + commit:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:24:17Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Full test + build
+
+`go test -race -count=1 ./... 2>&1 | tail -12 && echo --- && go build ./... && echo BUILD-OK`
+
+```text
+?   	github.com/daviddwlee84/sshbbs/cmd/bbsmoke	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/cmd/sshbbs	1.798s
+ok  	github.com/daviddwlee84/sshbbs/internal/auth	44.472s
+ok  	github.com/daviddwlee84/sshbbs/internal/chat	1.955s
+ok  	github.com/daviddwlee84/sshbbs/internal/markdown	3.418s
+ok  	github.com/daviddwlee84/sshbbs/internal/notify	3.131s
+ok  	github.com/daviddwlee84/sshbbs/internal/seed	3.539s
+?   	github.com/daviddwlee84/sshbbs/internal/server	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/store	10.369s
+?   	github.com/daviddwlee84/sshbbs/internal/store/storetest	[no test files]
+ok  	github.com/daviddwlee84/sshbbs/internal/tui	62.722s
+?   	github.com/daviddwlee84/sshbbs/internal/version	[no test files]
+---
+BUILD-OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:24:21Z)**_
+
+All green. Stage + commit:
+
+_**Agent (claude-opus-4-7 2026-05-06 12:24:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage + secret scan
+
+`git add internal/notify/ docs/notifications.md pitfalls/ && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/stage-agent-artifacts.sh && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/scan-staged.sh && echo SCAN-CLEAN`
+
+```text
+staged: .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+1 artifact(s) would be staged.
+SCAN-CLEAN
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:24:43Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Commit logging + redaction + pitfall
+
+```bash
+git commit -m "$(cat <<'EOF'
+Notify: success-path logging + URL redaction + macOS-proxy pitfall
+
+The dispatcher previously logged failure paths only — a successful
+delivery left no trace, making "I think notifications are firing but
+the user isn't seeing them" impossible to diagnose from the server
+log alone. Add INFO-level success logs and a DEBUG-level queue entry
+so operators can grep their log to distinguish "BBS never tried" from
+"BBS tried but receiver rejected".
+
+URLs in logs and error messages are now redacted via RedactURL, which
+strips the last path segment (Discord token / Slack signing key /
+ntfy topic / apprise config key). A user screenshotting a failed
+T 測試 no longer leaks their webhook token.
+
+- internal/notify/encoder.go: RedactURL parses scheme+host, redacts
+  the last path component to <redacted>, drops query string. Manually
+  composes the result (url.URL.String would percent-encode the angle
+  brackets). Pass-through on malformed URLs to never corrupt the
+  fallback diagnostic context.
+- internal/notify/dispatcher.go: post() logs INFO on success with
+  target/url/kind/duration; SendTest mirrors. scrubURL/scrubURLErr
+  walk net/http's *url.Error wrappers and replace the embedded URL
+  with its redacted form before bubbling to the user-facing flash
+  row. Dispatch logs DEBUG on enqueue.
+- internal/notify/encoder_test.go: 8 RedactURL cases (Discord/Slack/
+  ntfy/apprise + query string + edge cases for malformed and
+  rootpath URLs).
+- pitfalls/notify-context-deadline-exceeded-while-awaiting-headers.md:
+  full diagnosis trail for the Clash-on-macOS + Go-doesn't-read-GUI-
+  proxy interaction. Title chosen so future grep on the verbatim
+  error message lands here. Includes the dnstest.go reproducer and
+  the HTTPS_PROXY / NO_PROXY env-var workaround.
+- docs/notifications.md: new "What's logged" table mapping each log
+  line to when it fires, plus a Troubleshooting row pointing at the
+  pitfalls entry.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)" 2>&1 | tail -10
+```
+
+```text
+[main 178a7fe] Notify: success-path logging + URL redaction + macOS-proxy pitfall
+ 6 files changed, 1359 insertions(+), 9 deletions(-)
+ create mode 100644 pitfalls/notify-context-deadline-exceeded-while-awaiting-headers.md
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 12:24:56Z)**_
+
+Committed `178a7fe`. 重起 BBS 後再按 `T 測試`，server log 會看到類似這樣：
+
+```
+INFO notify: test delivered target=2 url=https://discord.com/api/webhooks/1086.../<redacted> status=200 duration=920ms
+```
+
+真實事件（推文/水球/信件/回文）也會 log：
+
+```
+INFO notify: delivered target=2 url=https://discord.com/api/webhooks/1086.../<redacted> kind=push to=1 from=bob status=204 duration=1.1s
+```
+
+URL 的 token 段都被換成 `<redacted>` — 所以你下次再 screenshot debug 不會把 webhook 鑰匙曝光。失敗訊息（包含 net/http 自己塞進去的那段 `Post "https://...":` 前綴）也會被 scrub。
+
+Branch stack 現在：
+
+```
+178a7fe Notify: success-path logging + URL redaction + macOS-proxy pitfall  ← just now
+22e4f63 Notify: 'T' on settings screen sends synchronous test notification
+2f8728c Notify: Discord auto-detect + reframe webhook target as user-supplied
+374c09d Notify: merge apprise into canonical docker-compose; e2e smoke tester
+3a36cad Settings + notifications: bio, password, apprise webhooks, article reply
+```

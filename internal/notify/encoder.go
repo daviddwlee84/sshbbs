@@ -6,10 +6,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
+
+// RedactURL strips secrets from the last path segment of a webhook URL so
+// it can be safely logged or surfaced in error messages. Examples:
+//
+//	https://discord.com/api/webhooks/<id>/<token> → .../<id>/<redacted>
+//	https://hooks.slack.com/services/T/B/X        → .../T/B/<redacted>
+//	https://ntfy.sh/<topic>                       → https://ntfy.sh/<redacted>
+//	http://apprise:8000/notify/<key>              → .../notify/<redacted>
+//
+// The last path segment is the credential in every webhook scheme we care
+// about: Discord token, Slack signing key, ntfy topic, apprise config key.
+// Hosts and the leading path remain visible so log lines stay debuggable.
+//
+// Strings that don't parse as a URL with scheme + host are returned
+// unchanged — better to leak nothing than to corrupt diagnostic context.
+func RedactURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return rawURL
+	}
+	if u.Path == "" || u.Path == "/" {
+		return rawURL
+	}
+	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(segments) == 0 {
+		return rawURL
+	}
+	segments[len(segments)-1] = "<redacted>"
+	// Build the result manually rather than via url.URL.String() — the
+	// latter percent-encodes the angle brackets in "<redacted>".
+	return u.Scheme + "://" + u.Host + "/" + strings.Join(segments, "/")
+}
 
 // buildRequest constructs the HTTP request for a single (target, event)
 // pair. Format is inferred from the target URL — Discord webhook URLs
