@@ -87,6 +87,69 @@ func TestNavigate_AdminCanReachAdminScreen(t *testing.T) {
 	}
 }
 
+// TestRoot_ToastSuppressedInMatchingThread asserts that when the active
+// screen is a wbThreadModel pointing at the sender of an incoming wb,
+// Root.Update does NOT set the toast (the thread already shows the row).
+func TestRoot_ToastSuppressedInMatchingThread(t *testing.T) {
+	st := storetest.New(t)
+	bob := storetest.MustUser(t, st, "bob", "")
+	alice := storetest.MustUser(t, st, "alice", "")
+	deps := Deps{Store: st, User: bob, Broker: chat.NewBroker()}
+	r := NewRoot(deps)
+	updated, _ := r.navigate(NavigateMsg{To: ScreenWBThread, CounterpartyUserID: alice.ID})
+	r = updated.(Root)
+	if r.activeScreen != ScreenWBThread {
+		t.Fatalf("setup: activeScreen=%v, want ScreenWBThread", r.activeScreen)
+	}
+
+	updated, _ = r.Update(WBIncomingMsg{ID: 1, FromUserID: "alice", Body: "hi"})
+	r = updated.(Root)
+	if r.toast != "" {
+		t.Errorf("toast set to %q while in matching thread — should be suppressed", r.toast)
+	}
+}
+
+// TestRoot_ToastFiresInOtherThread proves the suppression is scoped: an
+// incoming wb from someone OTHER than the active thread's counterparty
+// still toasts.
+func TestRoot_ToastFiresInOtherThread(t *testing.T) {
+	st := storetest.New(t)
+	bob := storetest.MustUser(t, st, "bob", "")
+	alice := storetest.MustUser(t, st, "alice", "")
+	storetest.MustUser(t, st, "carol", "")
+	deps := Deps{Store: st, User: bob, Broker: chat.NewBroker()}
+	r := NewRoot(deps)
+	updated, _ := r.navigate(NavigateMsg{To: ScreenWBThread, CounterpartyUserID: alice.ID})
+	r = updated.(Root)
+
+	updated, _ = r.Update(WBIncomingMsg{ID: 2, FromUserID: "carol", Body: "hey"})
+	r = updated.(Root)
+	if r.toast == "" {
+		t.Errorf("toast NOT set for non-matching counterparty — suppression too aggressive")
+	}
+	if !strings.Contains(r.toast, "carol") {
+		t.Errorf("toast missing sender name; got %q", r.toast)
+	}
+}
+
+// TestRoot_ToastFiresOnNonThreadScreens verifies suppression doesn't leak
+// into other screens — opening the inbox shouldn't suppress toasts.
+func TestRoot_ToastFiresOnNonThreadScreens(t *testing.T) {
+	st := storetest.New(t)
+	bob := storetest.MustUser(t, st, "bob", "")
+	storetest.MustUser(t, st, "alice", "")
+	deps := Deps{Store: st, User: bob, Broker: chat.NewBroker()}
+	r := NewRoot(deps)
+	updated, _ := r.navigate(NavigateMsg{To: ScreenWBInbox})
+	r = updated.(Root)
+
+	updated, _ = r.Update(WBIncomingMsg{ID: 3, FromUserID: "alice", Body: "yo"})
+	r = updated.(Root)
+	if r.toast == "" {
+		t.Error("toast not set on inbox — should fire on non-thread screens")
+	}
+}
+
 func screenName(s Screen) string {
 	switch s {
 	case ScreenPostCompose:

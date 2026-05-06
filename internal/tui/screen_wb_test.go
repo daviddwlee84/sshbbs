@@ -172,11 +172,26 @@ func TestWBThread_OpeningMarksReadInbound(t *testing.T) {
 	}
 }
 
-func TestWBThread_BackKeys(t *testing.T) {
+// While input is focused (the default), only Esc maps to back. The other
+// vim-style "back" keys (backspace/left/h) are typed into the input. Tab
+// switches focus to the scrollback, where the full keymap applies.
+func TestWBThread_BackKeys_InputFocused(t *testing.T) {
+	deps, alice, _ := wbFixture(t, 1)
+	m := newWBThreadModel(deps, alice.ID)
+	_, cmd := m.Update(keyOf("esc"))
+	nav, ok := runCmd(cmd).(NavigateMsg)
+	if !ok || nav.To != ScreenWBInbox {
+		t.Errorf("esc → %+v, want NavigateMsg{To: ScreenWBInbox}", nav)
+	}
+}
+
+func TestWBThread_BackKeys_ScrollbackFocused(t *testing.T) {
 	deps, alice, _ := wbFixture(t, 1)
 	for _, key := range []string{"esc", "backspace", "left", "h"} {
 		t.Run(key, func(t *testing.T) {
 			m := newWBThreadModel(deps, alice.ID)
+			updated, _ := m.Update(keyOf("tab")) // focus scrollback
+			m = updated.(wbThreadModel)
 			_, cmd := m.Update(keyOf(key))
 			nav, ok := runCmd(cmd).(NavigateMsg)
 			if !ok || nav.To != ScreenWBInbox {
@@ -186,9 +201,13 @@ func TestWBThread_BackKeys(t *testing.T) {
 	}
 }
 
-func TestWBThread_QuitKey(t *testing.T) {
+// 'Q' is treated as a literal char while input is focused; only fires
+// after Tab.
+func TestWBThread_QuitKey_RequiresScrollbackFocus(t *testing.T) {
 	deps, alice, _ := wbFixture(t, 1)
 	m := newWBThreadModel(deps, alice.ID)
+	updated, _ := m.Update(keyOf("tab"))
+	m = updated.(wbThreadModel)
 	_, cmd := m.Update(keyOf("Q"))
 	nav, ok := runCmd(cmd).(NavigateMsg)
 	if !ok || nav.To != ScreenMainMenu {
@@ -196,21 +215,69 @@ func TestWBThread_QuitKey(t *testing.T) {
 	}
 }
 
-// c and r both open compose pre-filled with the counterparty handle.
-func TestWBThread_ComposeKey(t *testing.T) {
+// TestWBThread_TabTogglesFocus checks Tab cycles input ↔ scrollback.
+func TestWBThread_TabTogglesFocus(t *testing.T) {
 	deps, alice, _ := wbFixture(t, 1)
-	for _, key := range []string{"c", "r"} {
-		t.Run(key, func(t *testing.T) {
-			m := newWBThreadModel(deps, alice.ID)
-			_, cmd := m.Update(keyOf(key))
-			nav, ok := runCmd(cmd).(NavigateMsg)
-			if !ok || nav.To != ScreenWBCompose {
-				t.Fatalf("got %+v, want NavigateMsg{To: ScreenWBCompose}", nav)
-			}
-			if nav.Recipient != "alice" {
-				t.Errorf("Recipient = %q, want alice", nav.Recipient)
-			}
-		})
+	m := newWBThreadModel(deps, alice.ID)
+	if !m.focusInput {
+		t.Fatal("default focus should be input")
+	}
+	updated, _ := m.Update(keyOf("tab"))
+	m = updated.(wbThreadModel)
+	if m.focusInput {
+		t.Error("Tab from input did not flip focus")
+	}
+	updated, _ = m.Update(keyOf("tab"))
+	m = updated.(wbThreadModel)
+	if !m.focusInput {
+		t.Error("Tab from scrollback did not flip focus back")
+	}
+}
+
+// TestWBThread_SendOnEnter types a body and presses Enter; expects the
+// thread to grow by one row, the textinput to clear, and the row to
+// persist via the existing Insert path.
+func TestWBThread_SendOnEnter(t *testing.T) {
+	deps, alice, _ := wbFixture(t, 0)
+	m := newWBThreadModel(deps, alice.ID)
+	m.input.SetValue("hello alice")
+	updated, _ := m.Update(keyOf("enter"))
+	tm := updated.(wbThreadModel)
+	if len(tm.items) != 1 {
+		t.Fatalf("got %d items after send, want 1", len(tm.items))
+	}
+	if tm.items[0].Body != "hello alice" {
+		t.Errorf("appended body = %q, want %q", tm.items[0].Body, "hello alice")
+	}
+	if tm.input.Value() != "" {
+		t.Errorf("input not cleared after send: %q", tm.input.Value())
+	}
+	got, err := deps.Store.WaterBalloons().GetByID(context.Background(), tm.items[0].ID)
+	if err != nil || got.Body != "hello alice" {
+		t.Errorf("DB row missing or wrong: %+v err=%v", got, err)
+	}
+}
+
+// TestWBThread_SendEmptyNoop guards against accidental empty inserts.
+func TestWBThread_SendEmptyNoop(t *testing.T) {
+	deps, alice, _ := wbFixture(t, 0)
+	m := newWBThreadModel(deps, alice.ID)
+	updated, _ := m.Update(keyOf("enter"))
+	tm := updated.(wbThreadModel)
+	if len(tm.items) != 0 {
+		t.Errorf("empty Enter created %d items, want 0", len(tm.items))
+	}
+}
+
+// TestWBThread_TypingForwardsToInput sends a regular character key; the
+// textinput should receive it without any navigation side-effect.
+func TestWBThread_TypingForwardsToInput(t *testing.T) {
+	deps, alice, _ := wbFixture(t, 0)
+	m := newWBThreadModel(deps, alice.ID)
+	updated, _ := m.Update(keyOf("h"))
+	tm := updated.(wbThreadModel)
+	if tm.input.Value() != "h" {
+		t.Errorf("input value = %q, want %q (h should not navigate while input focused)", tm.input.Value(), "h")
 	}
 }
 
@@ -228,7 +295,8 @@ func TestWBThread_RendersCurrentHandle(t *testing.T) {
 	}
 }
 
-// TestWBThread_EmptyThread doesn't crash and shows the placeholder.
+// TestWBThread_EmptyThread doesn't crash and shows the placeholder along
+// with the input row (you can type to start a conversation).
 func TestWBThread_EmptyThread(t *testing.T) {
 	deps, alice, _ := wbFixture(t, 0)
 	m := newWBThreadModel(deps, alice.ID)

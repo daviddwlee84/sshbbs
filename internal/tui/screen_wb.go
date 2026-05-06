@@ -294,18 +294,27 @@ func (m wbComposeModel) View() string {
 }
 
 // =====================================================================
-// Thread (1-to-1 conversation history with one counterparty)
+// Thread (1-to-1 DM-style conversation with one counterparty)
+//
+// Layout: scrollback on top, single-line textinput at the bottom. Default
+// focus is the input (chat-app convention). Tab toggles focus to the
+// scrollback for vim-style scrolling. Sending Enter on a non-empty input
+// goes through the same Insert + Broker.Send path as wbComposeModel so
+// persistence and replay stay identical.
 // =====================================================================
 
 type wbThreadModel struct {
-	deps     Deps
-	cpID     int64  // counterparty user.id
-	cpUserID string // counterparty current handle (from users JOIN, not from_userid snapshot)
-	items    []*store.WaterBalloon
-	scroll   int
-	width    int
-	height   int
-	loadErr  error
+	deps       Deps
+	cpID       int64  // counterparty user.id
+	cpUserID   string // counterparty current handle (from users JOIN, not from_userid snapshot)
+	items      []*store.WaterBalloon
+	scroll     int
+	width      int
+	height     int
+	loadErr    error
+	input      textinput.Model
+	focusInput bool   // true = textinput receives keystrokes; false = scrollback nav
+	err        string // last send error, cleared on next keystroke
 }
 
 func newWBThreadModel(deps Deps, counterpartyID int64) wbThreadModel {
@@ -327,61 +336,147 @@ func newWBThreadModel(deps Deps, counterpartyID int64) wbThreadModel {
 			}
 		}
 	}
+
+	in := textinput.New()
+	in.Placeholder = "type a message…"
+	in.CharLimit = 240
+	in.Width = 60
+	in.Prompt = "> "
+	in.Focus()
+
 	return wbThreadModel{
-		deps:     deps,
-		cpID:     counterpartyID,
-		cpUserID: cp.UserID,
-		items:    items,
-		loadErr:  err,
+		deps:       deps,
+		cpID:       counterpartyID,
+		cpUserID:   cp.UserID,
+		items:      items,
+		loadErr:    err,
+		input:      in,
+		focusInput: true,
+		scroll:     1 << 30, // start at bottom
 	}
 }
 
-func (m wbThreadModel) Init() tea.Cmd { return nil }
+func (m wbThreadModel) Init() tea.Cmd { return textinput.Blink }
+
+// matchesCounterparty reports whether handle (case-insensitive) names this
+// thread's counterparty. Used by Root.Update to suppress the toast when an
+// incoming wb is already going to be appended into the thread.
+func (m wbThreadModel) matchesCounterparty(handle string) bool {
+	return strings.EqualFold(handle, m.cpUserID)
+}
 
 func (m wbThreadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		// Reserve room for prompt and a little chrome around the input.
+		m.input.Width = max(20, msg.Width-8)
 		return m, nil
 	case WBIncomingMsg:
-		// Live append: when the broker fans out a wb from our counterparty
-		// while we're viewing this thread, fold it in instead of waiting
-		// for re-entry. Toast still fires from Root (Phase 1 keeps both;
-		// toast suppression is Phase 2 territory).
-		if !strings.EqualFold(msg.FromUserID, m.cpUserID) {
+		if !m.matchesCounterparty(msg.FromUserID) {
 			return m, nil
 		}
 		ctx := context.Background()
 		if wb, err := m.deps.Store.WaterBalloons().GetByID(ctx, msg.ID); err == nil {
 			m.items = append(m.items, wb)
-			// Auto-scroll to the new bottom so the user sees the message.
 			m.scroll = 1 << 30
 		}
 		_ = m.deps.Store.WaterBalloons().MarkRead(ctx, msg.ID)
 		return m, nil
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc", "backspace", "left", "h":
-			return m, func() tea.Msg { return NavigateMsg{To: ScreenWBInbox} }
-		case "Q":
-			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
-		case "up", "k":
-			if m.scroll > 0 {
-				m.scroll--
-			}
-		case "down", "j":
-			m.scroll++ // clamped at render time
-		case "g", "home":
-			m.scroll = 0
-		case "G", "end":
-			m.scroll = 1 << 30 // clamped at render time
-		case "c", "r":
-			cp := m.cpUserID
-			return m, func() tea.Msg {
-				return NavigateMsg{To: ScreenWBCompose, Recipient: cp}
-			}
+		// Clear stale error on any keypress.
+		m.err = ""
+		if m.focusInput {
+			return m.updateInputFocused(msg)
+		}
+		return m.updateScrollFocused(msg)
+	}
+	return m, nil
+}
+
+// updateInputFocused handles keys while the textinput has focus. The
+// keymap is intentionally narrow — only Esc / Tab / scroll keys / Enter
+// are intercepted; everything else (including h, j, k, l, q, Q, c, r and
+// punctuation) is forwarded to the textinput so the user can type freely.
+func (m wbThreadModel) updateInputFocused(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m, func() tea.Msg { return NavigateMsg{To: ScreenWBInbox} }
+	case "tab":
+		m.focusInput = false
+		m.input.Blur()
+		return m, nil
+	case "up", "pgup":
+		if m.scroll > 0 {
+			m.scroll--
+		}
+		return m, nil
+	case "down", "pgdown":
+		m.scroll++ // clamped at render time
+		return m, nil
+	case "enter":
+		return m.submit()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+// updateScrollFocused handles keys while the scrollback has focus.
+// Familiar list-screen vim keys; Tab returns focus to the input.
+func (m wbThreadModel) updateScrollFocused(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace", "left", "h":
+		return m, func() tea.Msg { return NavigateMsg{To: ScreenWBInbox} }
+	case "Q":
+		return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+	case "tab":
+		m.focusInput = true
+		m.input.Focus()
+		return m, textinput.Blink
+	case "up", "k", "pgup":
+		if m.scroll > 0 {
+			m.scroll--
+		}
+	case "down", "j", "pgdown":
+		m.scroll++
+	case "g", "home":
+		m.scroll = 0
+	case "G", "end":
+		m.scroll = 1 << 30
+	}
+	return m, nil
+}
+
+// submit posts the current input as a new water balloon. Mirrors
+// wbComposeModel.submit so persistence and broker delivery behaviour
+// stay identical — only the UI surfacing differs (inline append + clear
+// instead of a "✓ sent" page transition).
+func (m wbThreadModel) submit() (tea.Model, tea.Cmd) {
+	body := strings.TrimSpace(m.input.Value())
+	if body == "" {
+		return m, nil
+	}
+	ctx := context.Background()
+	from := m.deps.User
+	wb, err := m.deps.Store.WaterBalloons().Insert(ctx, from.ID, from.UserID, m.cpID, body, false)
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if m.deps.Broker != nil {
+		delivered := m.deps.Broker.Send(m.cpID, WBIncomingMsg{
+			ID:         wb.ID,
+			FromUserID: from.UserID,
+			Body:       body,
+		})
+		if delivered {
+			_ = m.deps.Store.WaterBalloons().MarkRead(ctx, wb.ID)
 		}
 	}
+	m.items = append(m.items, wb)
+	m.input.SetValue("")
+	m.scroll = 1 << 30
 	return m, nil
 }
 
@@ -395,25 +490,45 @@ func (m wbThreadModel) View() string {
 		b.WriteString("  " + StyleError.Render("⚠ "+m.loadErr.Error()) + "\n")
 		return b.String()
 	}
-	if len(m.items) == 0 {
-		b.WriteString("  " + StyleDim.Render("(empty thread — press c to start)") + "\n")
-		b.WriteString("\n  " + StyleHelp.Render("c compose · Esc/←/h back · Q quit"))
-		return b.String()
-	}
 
+	// Scrollback occupies all the vertical space that isn't taken by the
+	// input row, the optional error line, the help line, and the surrounding
+	// blank rows / header.
 	lines := m.renderLines()
-	visible := m.height - 5
+	const reserved = 7 // header(2) + input(1) + help(2) + padding(2)
+	visible := m.height - reserved
 	if visible < 1 {
 		visible = len(lines)
 	}
-	if m.scroll > len(lines)-visible {
+	if m.scroll > max(0, len(lines)-visible) {
 		m.scroll = max(0, len(lines)-visible)
 	}
-	end := min(m.scroll+visible, len(lines))
-	for _, ln := range lines[m.scroll:end] {
-		b.WriteString(ln + "\n")
+	if len(lines) == 0 {
+		b.WriteString("  " + StyleDim.Render("(empty thread — type below to start)") + "\n")
+	} else {
+		end := min(m.scroll+visible, len(lines))
+		for _, ln := range lines[m.scroll:end] {
+			b.WriteString(ln + "\n")
+		}
 	}
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k scroll · g/G top/end · c/r reply · Esc/←/h back · Q quit"))
+	b.WriteString("\n")
+
+	if m.err != "" {
+		b.WriteString("  " + StyleError.Render("⚠ "+m.err) + "\n")
+	}
+
+	// Input row.
+	prefix := "  "
+	if m.focusInput {
+		prefix = "▸ "
+	}
+	b.WriteString(prefix + m.input.View() + "\n")
+
+	help := "Tab focus scrollback · Enter send · Esc back"
+	if !m.focusInput {
+		help = "↑/↓ j/k scroll · g/G top/end · Tab focus input · Esc/←/h back · Q quit"
+	}
+	b.WriteString("\n  " + StyleHelp.Render(help))
 	return b.String()
 }
 

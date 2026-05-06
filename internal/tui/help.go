@@ -86,16 +86,28 @@ var screenHelp = map[Screen][]helpSection{
 			{"Esc/←/h", "back to main menu"},
 		},
 	}},
-	ScreenWBThread: {{
-		Heading: "水球 對話 (1-to-1 history)",
-		Entries: []HelpEntry{
-			{"↑/↓ j/k", "scroll"},
-			{"g / G", "top / end"},
-			{"c / r", "compose to this user"},
-			{"Esc/←/h", "back to inbox"},
-			{"Q", "back to main menu"},
+	ScreenWBThread: {
+		{
+			Heading: "水球 對話 — input focused (default)",
+			Entries: []HelpEntry{
+				{"Enter", "send the typed message"},
+				{"Tab", "switch focus to scrollback"},
+				{"↑/↓ PgUp/PgDn", "scroll history while typing"},
+				{"Esc", "back to inbox"},
+				{"(any other key)", "typed into the input"},
+			},
 		},
-	}},
+		{
+			Heading: "Scrollback focused (after Tab)",
+			Entries: []HelpEntry{
+				{"↑/↓ j/k PgUp/PgDn", "scroll"},
+				{"g / G / Home / End", "top / end"},
+				{"Tab", "back to input"},
+				{"Esc/←/h", "back to inbox"},
+				{"Q", "back to main menu"},
+			},
+		},
+	},
 	ScreenOnline: {{
 		Heading: "Online users",
 		Entries: []HelpEntry{

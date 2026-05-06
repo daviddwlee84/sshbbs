@@ -109,8 +109,20 @@ func (m Root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case WBIncomingMsg:
-		m.setToast("💧 " + msg.FromUserID + ": " + msg.Body)
-		// Mark this WB as read so it doesn't replay on reconnect.
+		// Suppress the toast when the active screen is a wbThreadModel
+		// pointed at this exact counterparty — the thread itself appends
+		// the message, so the toast would be redundant noise.
+		showToast := true
+		if m.activeScreen == ScreenWBThread {
+			if tm, ok := m.sub.(wbThreadModel); ok && tm.matchesCounterparty(msg.FromUserID) {
+				showToast = false
+			}
+		}
+		if showToast {
+			m.setToast("💧 " + msg.FromUserID + ": " + msg.Body)
+		}
+		// Mark this WB as read so it doesn't replay on reconnect. (The
+		// thread also marks it read — both paths are idempotent.)
 		if m.deps.Store != nil && msg.ID != 0 {
 			go func(id int64) {
 				_ = m.deps.Store.WaterBalloons().MarkRead(context.Background(), id)
