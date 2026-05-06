@@ -20,6 +20,7 @@ For the why-we-do-it-this-way notes mapping back to pttbbs internals, see
 ```bash
 make hostkey            # generate .ssh/host_ed25519 (run once before first run)
 make run                # boots :2222, creates data/bbs.db with seed boards
+make watch              # auto-rebuild on .go/.sql changes; SIGINT-then-restart via `air`
 make build              # produces ./sshbbs
 make test               # plain go test
 make test-race          # what we treat as the CI standard

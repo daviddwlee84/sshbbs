@@ -1,0 +1,32 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/sshbbs ./cmd/sshbbs"
+  bin = "./tmp/sshbbs"
+  args_bin = ["-addr=:2222", "-db=data/bbs.db", "-hostkey=.ssh/host_ed25519"]
+  delay = 500
+  send_interrupt = true
+  kill_delay = "4s"
+  stop_on_error = false
+  include_ext = ["go", "sql"]
+  exclude_dir = [
+    "tmp",
+    "data",
+    ".ssh",
+    "dist",
+    ".specstory",
+    ".claude",
+    "scripts",
+    "docs",
+    "backlog",
+    "pitfalls",
+    "testdata",
+  ]
+  exclude_regex = ["_test\\.go$"]
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

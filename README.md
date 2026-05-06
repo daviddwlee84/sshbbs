@@ -109,6 +109,7 @@ docs/ptt_trace_code/    notes mapping pttbbs concepts to our schema
 
 ```bash
 make build              # build the binary
+make watch              # auto-rebuild on .go/.sql changes (dev loop)
 make test               # run tests
 make test-race          # race detector (CI standard)
 make cover              # coverage by package
@@ -117,7 +118,15 @@ make tidy               # go mod tidy
 make fmt vet            # gofmt + go vet
 ```
 
-See `docs/testing.md` for the layered testing strategy.
+`make watch` uses [`air`](https://github.com/air-verse/air), pinned via the
+Go 1.24+ `tool` directive (`go tool air`) — no global install needed.
+Edits to `.go` or `.sql` files trigger SIGINT → graceful drain → rebuild →
+relaunch; active SSH clients get disconnected and just reconnect.
+
+See [`docs/development.md`](docs/development.md) for the full local-dev
+playbook (watcher tuning, Delve step-debugger, test-watch recipes,
+graceful-shutdown contract) and [`docs/testing.md`](docs/testing.md) for
+the layered testing strategy.
 
 ## Roadmap & lessons learned
 
