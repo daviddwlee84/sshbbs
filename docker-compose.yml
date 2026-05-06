@@ -11,6 +11,17 @@ services:
           ssh-keygen -t ed25519 -f /keys/host_ed25519 -N "" -q
           chmod 600 /keys/host_ed25519
         fi
+  apprise:
+    # Webhook fan-out for per-user notifications (push / wb / mail / Re:).
+    # BBS reaches it via the docker DNS name "apprise" inside the compose
+    # network; from the host it's http://localhost:8000. See
+    # docs/notifications.md for the per-user setup walkthrough.
+    image: caronc/apprise:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - apprise-config:/config
+    restart: unless-stopped
   sshbbs:
     build:
       context: .
@@ -19,6 +30,8 @@ services:
     depends_on:
       hostkey-init:
         condition: service_completed_successfully
+      apprise:
+        condition: service_started
     ports:
       - "2222:2222"
     volumes:
@@ -29,3 +42,4 @@ services:
 volumes:
   bbs-data:
   bbs-keys:
+  apprise-config:

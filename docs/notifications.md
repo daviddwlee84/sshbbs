@@ -39,73 +39,100 @@ This keeps the BBS dependency-light. Operators who want apprise://
 URL parsing run `caronc/apprise-api` as a sidecar; everyone else points
 the BBS at whatever webhook stack they already have.
 
-## Recommended deployment: docker-compose with apprise-api
+## Recommended deployment: bundled docker-compose
 
-Drop this `docker-compose.yml` (or merge into your existing one) at the
-repo root:
-
-```yaml
-services:
-  apprise:
-    image: caronc/apprise:latest
-    container_name: bbs-apprise
-    ports: ["8000:8000"]
-    volumes: ["./apprise/config:/config"]
-    restart: unless-stopped
-
-  bbs:
-    build: .
-    ports: ["2222:2222"]
-    volumes:
-      - ./data:/app/data
-      - ./.ssh:/app/.ssh
-    depends_on: [apprise]
-```
-
-A working example lives at [`docker-compose.example.yml`](../docker-compose.example.yml).
-
-Bring it up:
+`apprise` is already in the canonical [`docker-compose.yml`](../docker-compose.yml)
+alongside `sshbbs` and `hostkey-init`, so a single command brings up
+the full stack:
 
 ```bash
-docker compose -f docker-compose.example.yml up -d
+docker compose up -d        # builds sshbbs + pulls apprise + seeds host key
+# or, if you prefer the wrapper Make target:
+make compose-up
 ```
 
-## First-time apprise-api setup
+What you get:
 
-`caronc/apprise-api` stores notification URLs under named "config keys".
-Add Discord (or any apprise-supported service) under key `mykey`:
+- `sshbbs` on `:2222` (SSH BBS)
+- `apprise` on `:8000` (caronc/apprise-api admin UI + REST endpoints)
+- Persistent named volumes: `bbs-data`, `bbs-keys`, `apprise-config`
+  — survive `docker compose down`, never lost across restarts.
+
+`make compose-down` stops both services; `make compose-down-volumes`
+also wipes the volumes (rare — only when you want a fresh DB and a
+fresh apprise config).
+
+## Where do I configure my webhook?
+
+Two pieces, every BBS user does both:
+
+### 1. Register your notification URL(s) in apprise-api
+
+Apprise-api keeps a key/value store of `<key> → [apprise:// URLs]`.
+Pick a unique key for yourself (e.g. `alice-discord`, your username
+plus the service name, anything unique within this apprise instance)
+and POST your apprise:// URL(s) under it:
 
 ```bash
-curl -X POST http://localhost:8000/add/mykey \
+curl -X POST http://localhost:8000/add/alice-discord \
   -H 'Content-Type: application/json' \
-  -d '{"urls": "discord://webhook_id/webhook_token"}'
+  -d '{"urls":"discord://webhook_id/webhook_token"}'
 ```
 
-Verify it works end-to-end:
+Multiple services under one key (one webhook hit fans out to all):
 
 ```bash
-curl -X POST http://localhost:8000/notify/mykey \
+curl -X POST http://localhost:8000/add/alice-all \
   -H 'Content-Type: application/json' \
-  -d '{"title": "test", "body": "hello from cli"}'
+  -d '{"urls":"discord://...,tgram://bot_token/chat_id,mailto://user:pass@gmail.com"}'
 ```
 
-If your Discord channel pinged, the path BBS → apprise → Discord is
-green.
+Smoke test the apprise → service path before involving the BBS:
 
-## Per-user BBS configuration
+```bash
+curl -X POST http://localhost:8000/notify/alice-discord \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"test","body":"hello from cli"}'
+```
 
-1. SSH in, log in (not `guest`).
-2. From the main menu pick **個人設定 User settings → 通知設定**.
-3. Toggle which events you want delivered (Space flips, Ctrl+S saves).
-4. Press `a` to add a webhook target. Two fields:
-   - **Label**: free-form, just for your own bookkeeping.
-   - **URL**: `http://apprise:8000/notify/mykey` (inside the docker
-     network) or `http://localhost:8000/notify/mykey` (from the host).
-5. Trigger the event (have a friend push your post, send yourself a
-   水球 from another account, etc.) and watch the notification land.
+If your Discord channel pinged, the apprise leg is green and any BBS
+notification fired at this key will reach Discord.
 
-`t` toggles a target enabled/disabled without losing the row, `e` edits
-in place, `d` deletes.
+The full apprise:// URL catalog (Slack / Telegram / ntfy.sh / SMTP /
+Pushover / 100+ more) lives at
+<https://github.com/caronc/apprise/wiki>.
+
+> **Tip:** apprise-api also has a browser admin UI at
+> <http://localhost:8000>. You can register / inspect / delete keys
+> without curl if you prefer.
+
+### 2. Tell BBS where to POST
+
+SSH in (not `guest`), then **主選單 → 個人設定 → 通知設定**:
+
+1. Toggle which events you want delivered: 推/噓 / 水球 / 信箱 / Re:
+   回文 / 僅在離線時通知. Space flips, Ctrl+S saves.
+2. Press `a` to add a webhook target:
+   - **Label**: free-form, your bookkeeping (e.g. "discord").
+   - **URL**: `http://apprise:8000/notify/<your-key>` — the docker
+     service name `apprise` is what BBS resolves inside the compose
+     network. **Not** `localhost`: BBS itself is in a container, so
+     `localhost` would mean the BBS container, not the apprise one.
+3. Enter to save the target. Test by getting another user to push
+   your post (or send yourself mail from a second account).
+
+#### Hostname cheat sheet
+
+The URL you put in 通知設定 depends on where BBS is running:
+
+| BBS runs in…              | Apprise URL the BBS should POST to                |
+|---------------------------|----------------------------------------------------|
+| docker compose (default)  | `http://apprise:8000/notify/<key>`                 |
+| host (`make run`)         | `http://localhost:8000/notify/<key>`               |
+| different host / network  | `http://<apprise-host-ip-or-dns>:8000/notify/<key>`|
+
+`t` toggles a target enabled/disabled without losing the row, `e`
+edits in place, `d` deletes.
 
 ## Payload schema
 

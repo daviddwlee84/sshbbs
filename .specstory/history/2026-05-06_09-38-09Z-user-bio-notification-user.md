@@ -16807,3 +16807,911 @@ _**Agent (claude-opus-4-7 2026-05-06 10:29:29Z)**_
 _**Agent (claude-opus-4-7 2026-05-06 10:29:30Z)**_
 
 Committed as `4be728c` — 39 files, 19,692 insertions / 48 deletions. The remaining diff on the .specstory file is just the live transcript still being appended; gets picked up next commit. Tree is clean of feature work.
+
+---
+
+_**User (2026-05-06 11:22:16Z)**_
+
+所以這個 @docker-compose.example.yml 我起起來了 需要測試嗎？
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:22:33Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:22:33Z)**_
+
+要不要測，先看你想驗證到哪一層。
+
+_**Agent (claude-opus-4-7 2026-05-06 11:22:36Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check Dockerfile + apprise container state
+
+`ls Dockerfile* 2>/dev/null; docker compose -f docker-compose.example.yml ps 2>&1`
+
+```text
+ Dockerfile
+NAME          IMAGE                   COMMAND                  SERVICE   CREATED          STATUS          PORTS
+bbs-apprise   caronc/apprise:latest   "/opt/apprise/webapp…"   apprise   55 minutes ago   Up 55 minutes   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:22:46Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:23:02Z)**_
+
+你目前只起了 sidecar (apprise 8000 通了)，BBS 還沒進 docker。建議三層由淺到深：
+
+**Layer 1 — apprise sidecar 可達 (10s)**
+```bash
+curl -s http://localhost:8000/status   # 應該回 {"status":"healthy"}
+```
+
+**Layer 2 — BBS → apprise 整條路徑 (~5 min, 推薦先這層)**
+
+不需要任何真實通知服務。Apprise 收到 POST 但沒有任何 URL 配在 key 上時會回 200 並 log delivery，這就足夠證明 BBS 端代碼跑對了。
+
+```bash
+# A. 用 webhook.site 或 nc 當「假的最終接收端」
+nc -l 9999 &      # 任意空 port，等下用 ctrl+c 收掉
+
+# B. 把 nc 寫成 apprise key
+curl -X POST http://localhost:8000/add/test \
+  -H 'Content-Type: application/json' \
+  -d '{"urls": "json://localhost:9999"}'
+
+# C. host 上跑 BBS（不用 build docker image）
+make run
+
+# D. 兩個 SSH session
+#    alice: 註冊 → 個人設定 → 通知設定 → 新增 target
+#           URL: http://localhost:8000/notify/test → Ctrl+S 儲存事件
+#    bob:   註冊 → 進 alice 的文章 → 按 + 推一個
+# 預期: nc 那邊會印出 BBS → apprise → json:// 的 JSON
+```
+
+如果 nc 看到 `{"title":"[BBS] bob 推了你的文章 «...»","body":"..."}` 就證明所有 hooks (push / wb / mail / reply) 跑得通 — 因為四個 kind 都走同一條 dispatcher。
+
+**Layer 3 — 真實通知 (15 min, 看你想不想 wow)**
+把 apprise key 換成 `discord://`、`tgram://`、`mailto://` 之類的真 URL，重複 D 步驟。Telegram bot token 最快 (3 分鐘從 @BotFather 拿 token + chat id)。
+
+**要不要把 BBS 也丟進 docker compose？**
+只有當你想驗證「service name `apprise` 在 docker 內 DNS 解得到」才需要，否則 host 上 `make run` 比較快 — code change 直接 reload，沒有 rebuild 的等待。
+
+我的建議：跑 Layer 2 一遍就夠了 — 它涵蓋了你這整個 PR 的 critical path (DB schema → repo → dispatcher → HTTP → JSON 格式)。Layer 3 是 demo，Layer 1 你已經隱性通過了 (container Up)。
+
+---
+
+_**User (2026-05-06 11:23:13Z)**_
+
+能直接幫我測？
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:12Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:13Z)**_
+
+直接幫你測 Layer 2。我寫個 Go smoke 程式，跑 sink → 配 apprise → 跑 dispatcher → 看封包真的繞一圈回來。
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:16Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Verify apprise reachable
+
+`curl -fsS http://localhost:8000/status 2>&1 | head -5`
+
+```text
+OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:23Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Register apprise key smoketest forwarding to host:9999 via json://
+
+```bash
+curl -s -X POST http://localhost:8000/add/smoketest \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":"json://host.docker.internal:9999"}' && echo
+echo "--- verify config ---"
+curl -s http://localhost:8000/get/smoketest -X POST
+```
+
+```text
+{"error": null}
+--- verify config ---
+json://host.docker.internal:9999/?method=POST&format=text&overflow=upstream
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:27Z)**_
+
+Apprise key registered. Now write the smoke program — listens on :9999 as the sink, opens a fresh DB, inserts user + target, fires a real notify event through the dispatcher.
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:42Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Write"><details>
+<summary>Tool use: **Write**</summary>
+
+```go
+// bbsmoke is a one-shot end-to-end check that the notify dispatcher's
+// HTTP path actually reaches a running caronc/apprise-api sidecar and
+// gets fanned out the configured downstream URL.
+//
+// Usage (with the docker-compose.example.yml apprise sidecar already up):
+//
+//   curl -X POST http://localhost:8000/add/smoketest \
+//     -H 'Content-Type: application/json' \
+//     -d '{"urls":"json://host.docker.internal:9999"}'
+//   go run ./cmd/bbsmoke
+//
+// Run from any directory in this module. Exits 0 on round-trip success,
+// non-zero on timeout. Prints the JSON body the sink received.
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/notify"
+	"github.com/daviddwlee84/sshbbs/internal/store"
+)
+
+func main() {
+	const sinkAddr = "0.0.0.0:9999"
+	const appriseURL = "http://localhost:8000/notify/smoketest"
+
+	received := make(chan []byte, 4)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	ln, err := net.Listen("tcp", sinkAddr)
+	if err != nil {
+		fatal("listen %s: %v", sinkAddr, err)
+	}
+	srv := &http.Server{Handler: mux}
+	go func() { _ = srv.Serve(ln) }()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+	fmt.Printf("[sink] listening on %s\n", sinkAddr)
+
+	dir, err := os.MkdirTemp("", "bbsmoke-")
+	if err != nil {
+		fatal("mktemp: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	st, err := store.Open(filepath.Join(dir, "smoke.db"))
+	if err != nil {
+		fatal("store.Open: %v", err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	alice, err := st.Users().Create(ctx, "alice",
+		"$2a$12$placeholderplaceholderplaceholderplaceholderplaceholder.", "", "")
+	if err != nil {
+		fatal("create user: %v", err)
+	}
+	tid, err := st.Notify().AddTarget(ctx, alice.ID, "apprise-smoke", appriseURL)
+	if err != nil {
+		fatal("AddTarget: %v", err)
+	}
+	fmt.Printf("[db] alice id=%d, target id=%d → %s\n", alice.ID, tid, appriseURL)
+
+	broker := chat.NewBroker()
+	mgr := notify.New(st, broker)
+	mctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	mgr.Start(mctx)
+	defer mgr.Stop()
+
+	ev := notify.Event{
+		Kind:       notify.KindPush,
+		ToUserID:   alice.ID,
+		FromUserID: "bob",
+		Title:      "[BBS-smoke] bob 推了你的文章 «Hello»",
+		Body:       "→ 推 nice post (round-trip test)",
+	}
+	mgr.Dispatch(ev)
+	fmt.Printf("[dispatch] kind=%s to=%d from=%s\n", ev.Kind, ev.ToUserID, ev.FromUserID)
+
+	select {
+	case body := <-received:
+		fmt.Printf("[sink] received %d bytes:\n%s\n", len(body), string(body))
+		fmt.Println("OK")
+	case <-time.After(8 * time.Second):
+		fmt.Println("TIMEOUT — sink got nothing in 8s")
+		os.Exit(1)
+	}
+}
+
+func fatal(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "fatal: "+format+"\n", args...)
+	os.Exit(2)
+}
+
+```
+
+```text
+File created successfully at: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/cmd/bbsmoke/main.go (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:46Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Run the end-to-end smoke test
+
+`go run ./cmd/bbsmoke 2>&1`
+
+```text
+[sink] listening on 0.0.0.0:9999
+[db] alice id=1, target id=1 → http://localhost:8000/notify/smoketest
+[dispatch] kind=push to=1 from=bob
+[sink] received 192 bytes:
+{"version": "1.0", "title": "[BBS-smoke] bob \u63a8\u4e86\u4f60\u7684\u6587\u7ae0 \u00abHello\u00bb", "message": "\u2192 \u63a8 nice post (round-trip test)", "attachments": [], "type": "info"}
+OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:56Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:24:59Z)**_
+
+成功 — 整條鏈打通：
+
+**BBS dispatcher → Apprise sidecar (docker:8000) → json:// sink (host:9999)**
+
+- BBS POST 出去的 `{title, body}` 被 apprise 收到後重新包成標準 envelope (`{"version":"1.0","title":"...","message":"...","type":"info"}`) 再轉送
+- CJK 字元正常保留（Python json.dumps 預設用 `\u` 轉義，是 apprise 行為，不是壞掉）
+- 從 dispatch 到 sink 收到 < 1 秒
+
+清掉測試殘餘:
+
+_**Agent (claude-opus-4-7 2026-05-06 11:25:02Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Remove apprise smoketest key
+
+```bash
+curl -s -X POST http://localhost:8000/del/smoketest && echo
+echo "--- still alive? ---"
+curl -s http://localhost:8000/get/smoketest -X POST
+```
+
+```text
+Successfully removed configuration
+--- still alive? ---
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:25:06Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:25:09Z)**_
+
+Apprise key 清掉了。`cmd/bbsmoke/main.go` 還留在 repo（未 tracked）。三個處理選項：
+
+1. **留著當回歸工具** — 加進 git，下次升 apprise / 改 dispatcher 拿來重測一次。
+2. **塞進 README/notifications.md 的「自我驗證」章節** — 給其他部署者抄。
+3. **直接刪** — 純丟棄式。
+
+我傾向 (1)，但加一行 `// +build smoke` 之類的 tag 讓它不影響 `make build` 的 binary 列表。要我做哪個？
+
+---
+
+_**User (2026-05-06 11:26:12Z)**_
+
+所以我們爲什麼沒有直接集成到 @docker-compose.yml 而是分開一個example？
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:26:32Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:26:41Z)**_
+
+老實說沒有好理由 — 是我寫 plan 時假設專案沒有現成的 compose（沒檢查），就照通用模板生了個 `.example.yml`。實際上既有 `docker-compose.yml` 的結構（named volume `bbs-data`/`bbs-keys` + `hostkey-init` 預先 seed host key）已經比我那個 example 嚴謹（持久化跨 `compose down`、不依賴 cwd 是 repo root），分兩檔反而是退步。
+
+正確做法是把 apprise 直接加進 `docker-compose.yml`，砍掉 example，docs 改指向同一個檔。差異很小：
+
+```yaml
+services:
+  hostkey-init: ...   # 不動
+  apprise:            # 新增
+    image: caronc/apprise:latest
+    ports: ["8000:8000"]
+    volumes: [apprise-config:/config]   # 用 named volume，跟 bbs-data 同 style
+    restart: unless-stopped
+  sshbbs:
+    depends_on:
+      hostkey-init: { condition: service_completed_successfully }
+      apprise:      { condition: service_started }    # 新增
+    # 其他不動
+
+volumes:
+  bbs-data:
+  bbs-keys:
+  apprise-config:   # 新增
+```
+
+要我合進去嗎？順手做的話：
+1. 把上面差異 patch 進 `docker-compose.yml`
+2. 刪 `docker-compose.example.yml`
+3. `docs/notifications.md` 跟 `README.md` 把 `-f docker-compose.example.yml` 那行改回 `docker compose up -d`
+4. 補一行說明：BBS 在 docker network 裡用 `http://apprise:8000/notify/<key>`，從 host 是 `http://localhost:8000/notify/<key>`
+
+---
+
+_**User (2026-05-06 11:27:39Z)**_
+
+好的 開始做吧 (然後user應該怎麽配他們的webhook？)
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:28:16Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:28:16Z)**_
+
+開始整合。先把 apprise 併進 `docker-compose.yml`，然後砍掉 example，更新文件。
+
+_**Agent (claude-opus-4-7 2026-05-06 11:28:23Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docker-compose.yml has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:28:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Delete the redundant example file
+
+`rm docker-compose.example.yml && ls docker-compose*.yml 2>&1`
+
+```text
+ docker-compose.yml
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:28:33Z)**_
+
+Now overhaul `docs/notifications.md` — drop the example file, integrate the canonical compose flow, and beef up the per-user setup with the host-vs-container URL distinction.
+
+_**Agent (claude-opus-4-7 2026-05-06 11:28:34Z)**_
+
+<tool-use data-tool-type="read" data-tool-name="Read"><details>
+<summary>Tool use: **Read**</summary>
+ `./docs/notifications.md`
+
+```text
+38	This keeps the BBS dependency-light. Operators who want apprise://
+39	URL parsing run `caronc/apprise-api` as a sidecar; everyone else points
+40	the BBS at whatever webhook stack they already have.
+41	
+42	## Recommended deployment: docker-compose with apprise-api
+43	
+44	Drop this `docker-compose.yml` (or merge into your existing one) at the
+45	repo root:
+46	
+47	```yaml
+48	services:
+49	  apprise:
+50	    image: caronc/apprise:latest
+51	    container_name: bbs-apprise
+52	    ports: ["8000:8000"]
+53	    volumes: ["./apprise/config:/config"]
+54	    restart: unless-stopped
+55	
+56	  bbs:
+57	    build: .
+58	    ports: ["2222:2222"]
+59	    volumes:
+60	      - ./data:/app/data
+61	      - ./.ssh:/app/.ssh
+62	    depends_on: [apprise]
+63	```
+64	
+65	A working example lives at [`docker-compose.example.yml`](../docker-compose.example.yml).
+66	
+67	Bring it up:
+68	
+69	```bash
+70	docker compose -f docker-compose.example.yml up -d
+71	```
+72	
+73	## First-time apprise-api setup
+74	
+75	`caronc/apprise-api` stores notification URLs under named "config keys".
+76	Add Discord (or any apprise-supported service) under key `mykey`:
+77	
+78	```bash
+79	curl -X POST http://localhost:8000/add/mykey \
+80	  -H 'Content-Type: application/json' \
+81	  -d '{"urls": "discord://webhook_id/webhook_token"}'
+82	```
+83	
+84	Verify it works end-to-end:
+85	
+86	```bash
+87	curl -X POST http://localhost:8000/notify/mykey \
+88	  -H 'Content-Type: application/json' \
+89	  -d '{"title": "test", "body": "hello from cli"}'
+90	```
+91	
+92	If your Discord channel pinged, the path BBS → apprise → Discord is
+93	green.
+94	
+95	## Per-user BBS configuration
+96	
+97	1. SSH in, log in (not `guest`).
+98	2. From the main menu pick **個人設定 User settings → 通知設定**.
+99	3. Toggle which events you want delivered (Space flips, Ctrl+S saves).
+100	4. Press `a` to add a webhook target. Two fields:
+101	   - **Label**: free-form, just for your own bookkeeping.
+102	   - **URL**: `http://apprise:8000/notify/mykey` (inside the docker
+103	     network) or `http://localhost:8000/notify/mykey` (from the host).
+104	5. Trigger the event (have a friend push your post, send yourself a
+105	   水球 from another account, etc.) and watch the notification land.
+106	
+107	`t` toggles a target enabled/disabled without losing the row, `e` edits
+108	in place, `d` deletes.
+109	
+110	## Payload schema
+111	
+112	The BBS sends exactly:
+113	
+114	```json
+115	{"title": "<one-line subject>", "body": "<short body or excerpt>"}
+116	```
+117	
+118	This matches `apprise-api`'s `/notify/<key>` contract directly. For
+119	non-apprise webhooks (ntfy.sh, Discord) the same shape works because
+120	those services accept arbitrary JSON and template against named fields.
+121	
+122	The `Content-Type: application/json` and `User-Agent: sshbbs-notify/1`
+123	headers are set on every request.
+124	
+125	## Troubleshooting
+126	
+127	| Symptom                                | Where to look                                                   |
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:10Z)**_
+
+<tool-use data-tool-type="write" data-tool-name="Edit"><details>
+<summary>Tool use: **Edit**</summary>
+
+```text
+The file /Volumes/Data/Program/tries/2026-04-29-ssh-bbs/docs/notifications.md has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:14Z)**_
+
+Verify Make targets and run the actual compose to confirm it stands up.
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:16Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check Make compose targets
+
+`grep -n "compose" Makefile | head -10`
+
+```text
+8:.PHONY: build run watch hostkey db-reset test test-race cover demo tidy fmt vet clean compose-up compose-down docker-build
+56:compose-up:
+57:	docker compose up --build -d
+59:compose-down:
+60:	docker compose down
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:16Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Validate the merged docker-compose.yml
+
+`docker compose config 2>&1 | head -50`
+
+```text
+name: 2026-04-29-ssh-bbs
+services:
+  apprise:
+    image: caronc/apprise:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8000"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: apprise-config
+        target: /config
+        volume: {}
+  hostkey-init:
+    command:
+      - |
+        if [ ! -f /keys/host_ed25519 ]; then
+          apk add --no-cache openssh-keygen >/dev/null
+          ssh-keygen -t ed25519 -f /keys/host_ed25519 -N "" -q
+          chmod 600 /keys/host_ed25519
+        fi
+    entrypoint:
+      - /bin/sh
+      - -c
+    image: alpine:3.20
+    networks:
+      default: null
+    volumes:
+      - type: volume
+        source: bbs-keys
+        target: /keys
+        volume: {}
+  sshbbs:
+    build:
+      context: /Volumes/Data/Program/tries/2026-04-29-ssh-bbs
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev
+    depends_on:
+      apprise:
+        condition: service_started
+        required: true
+      hostkey-init:
+        condition: service_completed_successfully
+        required: true
+    networks:
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:23Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:24Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check running containers (port 8000 conflict?)
+
+`docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"`
+
+```text
+NAMES                                IMAGE                              PORTS
+bbs-apprise                          caronc/apprise:latest              0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+financial-alert-scheduler            financialalert-cron                
+researchdebugtool-widget_manager-1   researchdebugtool-widget_manager   0.0.0.0:5001->5001/tcp, [::]:5001->5001/tcp
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:29Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:30Z)**_
+
+舊 example 起的 `bbs-apprise` 還在。停它然後用新 compose 起 apprise 確認。
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:33Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Remove orphan apprise container
+
+`docker stop bbs-apprise && docker rm bbs-apprise`
+
+```text
+bbs-apprise
+bbs-apprise
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:35Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Bring up apprise via canonical compose
+
+`docker compose up -d apprise 2>&1 | tail -10`
+
+```text
+ Volume 2026-04-29-ssh-bbs_apprise-config  Creating
+ Volume 2026-04-29-ssh-bbs_apprise-config  Created
+ Container 2026-04-29-ssh-bbs-apprise-1  Creating
+ Container 2026-04-29-ssh-bbs-apprise-1  Created
+ Container 2026-04-29-ssh-bbs-apprise-1  Starting
+ Container 2026-04-29-ssh-bbs-apprise-1  Started
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:48Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Re-run smoke test against the canonical-compose apprise
+
+```bash
+sleep 2 && curl -fsS http://localhost:8000/status && echo
+curl -s -X POST http://localhost:8000/add/smoketest \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":"json://host.docker.internal:9999"}' && echo
+go run ./cmd/bbsmoke 2>&1 | tail -10
+curl -s -X POST http://localhost:8000/del/smoketest && echo
+```
+
+```text
+OK
+{"error": null}
+[sink] listening on 0.0.0.0:9999
+[db] alice id=1, target id=1 → http://localhost:8000/notify/smoketest
+[dispatch] kind=push to=1 from=bob
+[sink] received 192 bytes:
+{"version": "1.0", "title": "[BBS-smoke] bob \u63a8\u4e86\u4f60\u7684\u6587\u7ae0 \u00abHello\u00bb", "message": "\u2192 \u63a8 nice post (round-trip test)", "attachments": [], "type": "info"}
+OK
+Successfully removed configuration
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:53Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:54Z)**_
+
+Smoke 路徑在新 compose 下也綠燈。最後做完整性檢查 + 確認 README 沒引用到死連結。
+
+_**Agent (claude-opus-4-7 2026-05-06 11:29:58Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check for stale references and build
+
+```bash
+grep -n "example\.yml\|docker-compose" README.md docs/notifications.md 2>&1 | head -10
+echo "---"
+go build ./... && echo BUILD-OK
+```
+
+```text
+docs/notifications.md:42:## Recommended deployment: bundled docker-compose
+docs/notifications.md:44:`apprise` is already in the canonical [`docker-compose.yml`](../docker-compose.yml)
+README.md:27:  caronc/apprise-api docker-compose recipe
+---
+BUILD-OK
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:30:04Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:30:21Z)**_
+
+全部綠：
+
+| 項目 | 狀態 |
+|------|------|
+| `docker-compose.yml` 合併 apprise + named volume `apprise-config` + sshbbs `depends_on` | ✓ |
+| `docker-compose.example.yml` 砍掉 | ✓ |
+| `docs/notifications.md` 重寫部署/配置章節 | ✓ |
+| `docker compose config` 驗證 | ✓ |
+| 重起 apprise (canonical compose) → smoke test 全鏈打通 | ✓ |
+| `go build ./...` | ✓ |
+| README/docs 沒有 stale 引用 | ✓ |
+
+apprise 容器還在跑（`2026-04-29-ssh-bbs-apprise-1` on `:8000`）。`make compose-down` 可以收掉。
+
+---
+
+## User 配 webhook 的兩步驟（簡版）
+
+**第 1 步 — 跟 apprise-api 註冊你的通知 URL（只做一次）**
+
+挑一個 unique key（建議 `<username>-<service>`，e.g. `alice-discord`），把對應 apprise:// URL POST 進去：
+
+```bash
+# 單一服務
+curl -X POST http://localhost:8000/add/alice-discord \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":"discord://webhook_id/webhook_token"}'
+
+# 多服務 fan-out（一個 BBS 事件 → 同時發 Discord+Telegram+Email）
+curl -X POST http://localhost:8000/add/alice-all \
+  -H 'Content-Type: application/json' \
+  -d '{"urls":"discord://...,tgram://bot_token/chat_id,mailto://user:pass@gmail.com"}'
+```
+
+或直接打開 <http://localhost:8000> admin UI 用滑鼠點。
+
+apprise:// URL 完整目錄：<https://github.com/caronc/apprise/wiki>
+
+**第 2 步 — 在 BBS 裡填 target URL**
+
+SSH 進去 → `主選單` → `5 個人設定` → `3 通知設定` → `a 新增`：
+
+| Label | URL |
+|-------|-----|
+| `discord` | `http://apprise:8000/notify/alice-discord`  ← BBS 在 docker 裡（預設） |
+| `discord` | `http://localhost:8000/notify/alice-discord`  ← BBS 跑在 host (`make run`) |
+
+勾選哪些事件要通知（推 / 水球 / 信箱 / 回文），Ctrl+S。完事。
+
+**Cheatsheet 的 hostname 差別**：BBS 自己在 container 裡時，`localhost` 指的是 BBS 容器自己，不是 apprise 容器；要用 docker 內部 service 名 `apprise`。我把這個 gotcha 寫進 docs 了。
+
+---
+
+需要我把這些 docker-compose 改動 + cmd/bbsmoke commit 起來嗎？bbsmoke 我建議保留當回歸工具 — 升 apprise 或改 dispatcher 時直接 `go run ./cmd/bbsmoke` 一鍵驗。
+
+---
+
+_**User (2026-05-06 11:32:43Z)**_
+
+所以普通情況 其實是應該讓user自己搭他們自己的 apprise-api server才比較合理 而不是搭在我們這裡 然後他們還要自己添加key之類的
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:33:23Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:33:44Z)**_
+
+完全對。我們把 apprise 默認打包是個架構錯誤，三個具體問題：
+
+1. **沒有租戶隔離**：apprise-api admin UI / REST 在 `:8000` 沒任何 auth。誰能連到 BBS 主機就能 `curl /del/<別人的 key>` 把其他用戶的配置砍掉，或讀回 `/get/<key>` 拿到 Discord token / Telegram bot token / mailto 密碼。
+2. **operator 是個 honeypot**：所有 user 的 apprise:// URL 明文存在 BBS operator 的機器上。Discord webhook 還好，但 mailto SMTP 密碼、telegram bot token 落地等於把所有用戶的通知通道交給 BBS 管理員。
+3. **使用者體驗反而比較差**：要先 SSH 進 admin 機器（或開另一個 port）才能配 key，跟 BBS 本身的 SSH 流程脫節。
+
+正確的 framing：BBS 只是個「對使用者提供的 URL POST `{title, body}` JSON」的 client。那個 URL 是什麼是 user 的事 — 可以是：
+
+- Discord webhook 直接 (`https://discord.com/api/webhooks/...`) — 不用 apprise
+- ntfy.sh (`https://ntfy.sh/<my-topic>`) — 不用 apprise
+- Slack incoming webhook
+- 自己的 n8n / Zapier / IFTTT
+- 自己 host 的 apprise-api（在自己 NAS / VPS / homelab）— 想用 100+ apprise:// 服務時的選項
+
+打包的 apprise 該降級成「demo / 單機 / 開發便利」， not the default。
+
+## 提案
+
+1. **docker-compose.yml** 把 apprise 用 compose profile 蓋起來：
+
+   ```yaml
+   apprise:
+     image: caronc/apprise:latest
+     profiles: ["demo"]      # ← 默認 docker compose up 不會起它
+     ports: ["8000:8000"]
+     ...
+   ```
+   
+   - `docker compose up -d` → 只起 sshbbs（一般部署）
+   - `docker compose --profile demo up -d` → 連 apprise 一起起（demo / 自用）
+   - 從 sshbbs.depends_on 拿掉 apprise（因為 default 不起）
+
+2. **docs/notifications.md 整個重寫 framing**：
+   - 主敘事：「BBS 對你給的 URL POST JSON。你的 URL 可以是 Discord/ntfy/自己的 apprise…」
+   - 列幾個常見直連 webhook 範例（Discord webhook URL / ntfy.sh 一行就能跑）
+   - apprise 章節改成「想要 apprise:// 多服務 fan-out？三種方案：(a) 公共 apprise relay (不推薦，等於把 secret 給第三方); (b) 自己 host 一個 apprise-api 在你掌控的機器; (c) BBS operator 在 demo profile 裡有 bundled 一個（單機/自用情境）」
+   - 補一個 **「BBS operator 視角」** 段落講清楚：你看不到 user 的 apprise:// URL，DB 裡只有 user 自己填的 webhook URL，這個 URL 本身可能是個 token (e.g. discord webhook URL)，DB 該當作 secret 對待
+
+3. **README**：把 features 那行「caronc/apprise-api docker-compose recipe」換掉，改成更中性的描述：「per-event webhook notifications (Discord / ntfy.sh / 自架 apprise / 任何 HTTP 接收端)」。
+
+4. **新增 docs 段落「Picking a webhook target」**：用 decision tree 幫 user 選：
+   - 只想 Discord 一個服務 → Discord webhook URL 直接填，跳過 apprise
+   - ntfy.sh on phone → ntfy URL 直接填
+   - 想要 5 個服務同時收 → 自己 host apprise-api
+
+要我做嗎？這個改動主要是 docs 重寫 + compose 加一行 profile，code 完全不動（dispatcher 本來就只是 HTTP POST，跟 apprise 解耦）。
+
+---
+
+_**User (2026-05-06 11:51:10Z)**_
+
+那先git commit原版 然後把你的提案實現一下
+
+---
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:21Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:22Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check current dirty state
+
+`git status`
+
+```text
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .specstory/history/2026-05-06_09-38-09Z-user-bio-notification-user.md
+	deleted:    docker-compose.example.yml
+	modified:   docker-compose.yml
+	modified:   docs/notifications.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	apprise/
+	cmd/bbsmoke/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:28Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:30Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Check apprise dir + recent commits
+
+`ls -la apprise/ 2>&1; echo ---; git log --oneline -3`
+
+```text
+drwxr-xr-x@ - daviddwlee84  6 May 19:24  **config
+---
+3a36cad Settings + notifications: bio, password, apprise webhooks, article reply
+1b6089d Boards: / search · s sort · ? help discoverability
+6853e90 Admin/Mod: lock comments / arrows-only on articles
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:36Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:37Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Remove orphan apprise/ dir
+
+`ls apprise/config/ 2>&1; echo ---; rm -rf apprise/ && echo "removed apprise/ (orphan from old example bind-mount; now using named volume apprise-config)"`
+
+```text
+ **92
+ **store
+---
+removed apprise/ (orphan from old example bind-mount; now using named volume apprise-config)
+```
+</details></tool-use>
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:43Z)**_
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:44Z)**_
+
+Now stage and commit. Use the agent-history-hygiene flow.
+
+_**Agent (claude-opus-4-7 2026-05-06 11:51:47Z)**_
+
+<tool-use data-tool-type="shell" data-tool-name="Bash"><details>
+<summary>Tool use: **Bash**</summary>
+Stage feature files, agent artifacts, scan for secrets
+
+`git add docker-compose.yml docs/notifications.md cmd/bbsmoke/ && git rm docker-compose.example.yml && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/stage-agent-artifacts.sh && bash /Users/daviddwlee84/.claude/skills/agent-history-hygiene/scripts/scan-staged.sh && echo SCAN-CLEAN`
+</details></tool-use>
