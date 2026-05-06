@@ -4,17 +4,47 @@ package i18n
 // Top namespaces: common.* (cross-screen primitives), screen.<name>.*
 // (per-screen labels), error.* (error toasts), notify.* (webhook titles),
 // help.<screen>.* (help-overlay rows).
-//
-// PR 1 declares only the keys the locale-settings screen needs, plus the
-// new "Locale" entry on the user-settings sub-menu. PR 2 expands this
-// list as it converts the rest of the screens; until then existing
-// hard-coded CJK strings stay where they are.
 const (
-	CommonBack = "common.back"
+	CommonBack    = "common.back"
+	CommonLoading = "common.loading"
 
-	ScreenUserSettingsLocale     = "screen.user_settings.locale"
-	ScreenUserSettingsLocaleHint = "screen.user_settings.locale_hint"
+	// ── Main menu ──────────────────────────────────────────────────────
+	ScreenMainMenuTitle           = "screen.main_menu.title"
+	ScreenMainMenuLastLoginLine   = "screen.main_menu.last_login_line"
+	ScreenMainMenuItemBoards      = "screen.main_menu.item.boards"
+	ScreenMainMenuItemWB          = "screen.main_menu.item.wb"
+	ScreenMainMenuItemOnline      = "screen.main_menu.item.online"
+	ScreenMainMenuItemMail        = "screen.main_menu.item.mail"
+	ScreenMainMenuItemSettings    = "screen.main_menu.item.settings"
+	ScreenMainMenuItemAdmin       = "screen.main_menu.item.admin"
+	ScreenMainMenuItemQuit        = "screen.main_menu.item.quit"
+	ScreenMainMenuHintBoards      = "screen.main_menu.hint.boards"
+	ScreenMainMenuHintWB          = "screen.main_menu.hint.wb"
+	ScreenMainMenuHintOnline      = "screen.main_menu.hint.online"
+	ScreenMainMenuHintMail        = "screen.main_menu.hint.mail"
+	ScreenMainMenuHintSettings    = "screen.main_menu.hint.settings"
+	ScreenMainMenuHintAdmin       = "screen.main_menu.hint.admin"
+	ScreenMainMenuHintQuit        = "screen.main_menu.hint.quit"
+	ScreenMainMenuMidHeader       = "screen.main_menu.mid_header"
+	ScreenMainMenuHelpLine        = "screen.main_menu.help_line"
 
+	// ── User settings sub-menu ─────────────────────────────────────────
+	ScreenUserSettingsTitle           = "screen.user_settings.title"
+	ScreenUserSettingsAccountLine     = "screen.user_settings.account_line"
+	ScreenUserSettingsNoBio           = "screen.user_settings.no_bio"
+	ScreenUserSettingsItemPassword    = "screen.user_settings.item.password"
+	ScreenUserSettingsItemBio         = "screen.user_settings.item.bio"
+	ScreenUserSettingsItemNotify      = "screen.user_settings.item.notify"
+	ScreenUserSettingsItemBack        = "screen.user_settings.item.back"
+	ScreenUserSettingsHintPassword    = "screen.user_settings.hint.password"
+	ScreenUserSettingsHintBio         = "screen.user_settings.hint.bio"
+	ScreenUserSettingsHintNotify      = "screen.user_settings.hint.notify"
+	ScreenUserSettingsHintBack        = "screen.user_settings.hint.back"
+	ScreenUserSettingsLocale          = "screen.user_settings.locale"
+	ScreenUserSettingsLocaleHint      = "screen.user_settings.locale_hint"
+	ScreenUserSettingsHelpLine        = "screen.user_settings.help_line"
+
+	// ── Locale settings ────────────────────────────────────────────────
 	ScreenLocaleSettingsTitle      = "screen.locale_settings.title"
 	ScreenLocaleSettingsIntro      = "screen.locale_settings.intro"
 	ScreenLocaleSettingsOptionZH   = "screen.locale_settings.option_zh_label"
@@ -24,4 +54,161 @@ const (
 	ScreenLocaleSettingsFlashSaved = "screen.locale_settings.flash_saved"
 	ScreenLocaleSettingsHelpLine   = "screen.locale_settings.help_line"
 	ScreenLocaleSettingsHeaderHelp = "screen.locale_settings.header_help"
+
+	// ── Online users list ──────────────────────────────────────────────
+	ScreenOnlineTitle         = "screen.online.title"
+	ScreenOnlineEmpty         = "screen.online.empty"
+	ScreenOnlineEmptyHelpLine = "screen.online.empty_help_line"
+	ScreenOnlineHelpLine      = "screen.online.help_line"
+
+	// ── Board list ─────────────────────────────────────────────────────
+	ScreenBoardListTitle             = "screen.board_list.title"
+	ScreenBoardListSearchPlaceholder = "screen.board_list.search_placeholder"
+	ScreenBoardListSearchPrompt      = "screen.board_list.search_prompt"
+	ScreenBoardListSearchInProgress  = "screen.board_list.search_in_progress"
+	ScreenBoardListSearchActive      = "screen.board_list.search_active"
+	ScreenBoardListNoMatch           = "screen.board_list.no_match"
+	ScreenBoardListNoBoards          = "screen.board_list.no_boards"
+	ScreenBoardListLoadFailed        = "screen.board_list.load_failed"
+	ScreenBoardListHelpLine          = "screen.board_list.help_line"
+
+	// ── Board view (article list) ──────────────────────────────────────
+	ScreenBoardViewTitleNamed       = "screen.board_view.title_named"
+	ScreenBoardViewTitleBare        = "screen.board_view.title_bare"
+	ScreenBoardViewSearchPlaceholder = "screen.board_view.search_placeholder"
+	ScreenBoardViewSearchPrompt     = "screen.board_view.search_prompt"
+	ScreenBoardViewSearchInProgress = "screen.board_view.search_in_progress"
+	ScreenBoardViewSearchActive     = "screen.board_view.search_active"
+	ScreenBoardViewNoArticles       = "screen.board_view.no_articles"
+	ScreenBoardViewSortByScore      = "screen.board_view.sort_by_score"
+	ScreenBoardViewHelpLine         = "screen.board_view.help_line"
+
+	// ── Article view ───────────────────────────────────────────────────
+	ScreenArticleViewTitle              = "screen.article_view.title"
+	ScreenArticleViewCommentsPrefix     = "screen.article_view.comments_prefix"
+	ScreenArticleViewCommentsArrowsOnly = "screen.article_view.comments_arrows_only"
+	ScreenArticleViewCommentsLocked     = "screen.article_view.comments_locked"
+	ScreenArticleViewPushesHeader       = "screen.article_view.pushes_header"
+	ScreenArticleViewConfirmDeleteArt   = "screen.article_view.confirm_delete_article"
+	ScreenArticleViewConfirmDeletePush  = "screen.article_view.confirm_delete_push"
+	ScreenArticleViewModeBanner         = "screen.article_view.mode_banner"
+	ScreenArticleViewModeOptions        = "screen.article_view.mode_options"
+	ScreenArticleViewHelpBase           = "screen.article_view.help_base"
+	ScreenArticleViewHelpPushKinds      = "screen.article_view.help_push_kinds"
+	ScreenArticleViewHelpSelectPush     = "screen.article_view.help_select_push"
+	ScreenArticleViewHelpEdit           = "screen.article_view.help_edit"
+	ScreenArticleViewHelpModeToggle     = "screen.article_view.help_mode_toggle"
+	ScreenArticleViewHelpDeletePush     = "screen.article_view.help_delete_push"
+	ScreenArticleViewHelpDeleteArt      = "screen.article_view.help_delete_article"
+	ScreenArticleViewErrPushBodyEmpty   = "screen.article_view.err_push_body_empty"
+
+	// ── Post compose / Article edit / Reply ────────────────────────────
+	ScreenPostComposeTitleNew      = "screen.post_compose.title_new"
+	ScreenPostComposeTitleReply    = "screen.post_compose.title_reply"
+	ScreenPostComposeReplyPrefix   = "screen.post_compose.reply_prefix"
+	ScreenPostComposeWroteSuffix   = "screen.post_compose.wrote_suffix"
+	ScreenPostComposeTitlePh       = "screen.post_compose.title_placeholder"
+	ScreenPostComposeBodyPh        = "screen.post_compose.body_placeholder"
+	ScreenPostComposeFMHintMissing = "screen.post_compose.fm_hint_missing"
+	ScreenPostComposeFMHintPaste   = "screen.post_compose.fm_hint_paste"
+	ScreenArticleEditTitle         = "screen.article_edit.title"
+	ScreenArticleEditTitlePh       = "screen.article_edit.title_placeholder"
+	ScreenArticleEditBodyPh        = "screen.article_edit.body_placeholder"
+
+	// ── Article export ─────────────────────────────────────────────────
+	ScreenArticleExportTitle           = "screen.article_export.title"
+	ScreenArticleExportGuestNoWrite    = "screen.article_export.guest_no_write"
+	ScreenArticleExportWroteFile       = "screen.article_export.wrote_file"
+	ScreenArticleExportOSC52Truncated  = "screen.article_export.osc52_truncated"
+	ScreenArticleExportOSC52Copied     = "screen.article_export.osc52_copied"
+	ScreenArticleExportHelpLine        = "screen.article_export.help_line"
+
+	// ── Register / Password / Bio / Banner / Splash ────────────────────
+	ScreenRegisterTitle          = "screen.register.title"
+	ScreenRegisterSuccess        = "screen.register.success"
+	ScreenRegisterRetryHint      = "screen.register.retry_hint"
+	ScreenRegisterDoneHint       = "screen.register.done_hint"
+	ScreenRegisterFieldUserID    = "screen.register.field_user_id"
+	ScreenRegisterFieldPassword  = "screen.register.field_password"
+	ScreenRegisterFieldNickname  = "screen.register.field_nickname"
+	ScreenRegisterNicknamePh     = "screen.register.nickname_placeholder"
+	ScreenPasswordChangeTitle    = "screen.password_change.title"
+	ScreenPasswordChangeTitleMust = "screen.password_change.title_must"
+	ScreenPasswordChangePhCurrent = "screen.password_change.placeholder_current"
+	ScreenPasswordChangePhNew    = "screen.password_change.placeholder_new"
+	ScreenPasswordChangePhConfirm = "screen.password_change.placeholder_confirm"
+	ScreenPasswordChangeLabelCurrent = "screen.password_change.label_current"
+	ScreenPasswordChangeLabelNew    = "screen.password_change.label_new"
+	ScreenPasswordChangeLabelConfirm = "screen.password_change.label_confirm"
+	ScreenPasswordChangeErrWrong = "screen.password_change.err_wrong"
+	ScreenPasswordChangeErrMismatch = "screen.password_change.err_mismatch"
+	ScreenPasswordChangeErrSame  = "screen.password_change.err_same"
+	ScreenPasswordChangeOKToMenu = "screen.password_change.ok_to_menu"
+	ScreenPasswordChangeOK       = "screen.password_change.ok"
+	ScreenBioEditTitle           = "screen.bio_edit.title"
+	ScreenBioEditPlaceholder     = "screen.bio_edit.placeholder"
+	ScreenBoardBannerEditTitle   = "screen.board_banner_edit.title"
+	ScreenBoardBannerEditPh      = "screen.board_banner_edit.placeholder"
+	ScreenBoardBannerEditHelpLine = "screen.board_banner_edit.help_line"
+	ScreenBoardSplashTitleNamed  = "screen.board_splash.title_named"
+	ScreenBoardSplashTitleBare   = "screen.board_splash.title_bare"
+
+	// ── Mail / WB ──────────────────────────────────────────────────────
+	ScreenMailInboxTitle      = "screen.mail.inbox_title"
+	ScreenMailThreadTitle     = "screen.mail.thread_title"
+	ScreenMailComposeTitleNew = "screen.mail.compose_title_new"
+	ScreenMailComposeTitleReply = "screen.mail.compose_title_reply"
+	ScreenMailWroteSuffix     = "screen.mail.wrote_suffix"
+	ScreenWBInboxTitle        = "screen.wb.inbox_title"
+	ScreenWBComposeTitle      = "screen.wb.compose_title"
+	ScreenWBThreadTitle       = "screen.wb.thread_title"
+
+	// ── Notify settings ────────────────────────────────────────────────
+	ScreenNotifyTitle             = "screen.notify_settings.title"
+	ScreenNotifyEventsHeader      = "screen.notify_settings.events_header"
+	ScreenNotifyTargetsHeader     = "screen.notify_settings.targets_header"
+	ScreenNotifyNoTargets         = "screen.notify_settings.no_targets"
+	ScreenNotifyAddTarget         = "screen.notify_settings.add_target"
+	ScreenNotifyLabelOnPush       = "screen.notify_settings.label.on_push"
+	ScreenNotifyLabelOnWB         = "screen.notify_settings.label.on_wb"
+	ScreenNotifyLabelOnMail       = "screen.notify_settings.label.on_mail"
+	ScreenNotifyLabelOnReply      = "screen.notify_settings.label.on_reply"
+	ScreenNotifyLabelOffline      = "screen.notify_settings.label.only_when_offline"
+	ScreenNotifyHintOnPush        = "screen.notify_settings.hint.on_push"
+	ScreenNotifyHintOnWB          = "screen.notify_settings.hint.on_wb"
+	ScreenNotifyHintOnMail        = "screen.notify_settings.hint.on_mail"
+	ScreenNotifyHintOnReply       = "screen.notify_settings.hint.on_reply"
+	ScreenNotifyHintOffline       = "screen.notify_settings.hint.offline"
+	ScreenNotifyEditLabelPh       = "screen.notify_settings.edit_label_placeholder"
+	ScreenNotifyEditURLPh         = "screen.notify_settings.edit_url_placeholder"
+	ScreenNotifyFlashPrefsSaved   = "screen.notify_settings.flash_prefs_saved"
+	ScreenNotifyFlashEnabled      = "screen.notify_settings.flash_enabled"
+	ScreenNotifyFlashDisabled     = "screen.notify_settings.flash_disabled"
+	ScreenNotifyFlashDeleted      = "screen.notify_settings.flash_deleted"
+	ScreenNotifyFlashAdded        = "screen.notify_settings.flash_added"
+	ScreenNotifyFlashUpdated      = "screen.notify_settings.flash_updated"
+	ScreenNotifyHelpLine          = "screen.notify_settings.help_line"
+
+	// ── Admin / users ──────────────────────────────────────────────────
+	ScreenAdminUsersTitle        = "screen.admin_users.title"
+	ScreenAdminUsersToastAlready = "screen.admin_users.toast_already"
+	ScreenAdminUsersToastNoLast  = "screen.admin_users.toast_no_last_admin"
+
+	// ── Help overlay ───────────────────────────────────────────────────
+	HelpOverlayTitle = "help.overlay.title"
+	HelpGlobalWBInbox = "help.global.wb_inbox"
+
+	// ── Errors / toasts (root + global) ────────────────────────────────
+	ErrorGuestReadOnly = "error.guest_read_only"
+	ErrorAdminOnly     = "error.admin_only"
+	ErrorPermDenied    = "error.permission_denied"
+	ErrorCommentsLocked = "error.comments_locked"
+	ErrorCommentsArrowsOnly = "error.comments_arrows_only"
+
+	// ── Notification webhook titles ────────────────────────────────────
+	NotifyPushTitle = "notify.push.title"
+	NotifyWBTitle   = "notify.wb.title"
+	NotifyMailTitle = "notify.mail.title"
+	NotifyReplyTitle = "notify.reply.title"
+	NotifyReplyBody  = "notify.reply.body"
 )

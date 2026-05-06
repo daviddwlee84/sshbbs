@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -30,7 +31,7 @@ type boardBannerEditModel struct {
 
 func newBoardBannerEditModel(deps Deps, boardID int64) boardBannerEditModel {
 	ta := textarea.New()
-	ta.Placeholder = "貼上 ANSI / ASCII art… (空字串會清掉 banner)"
+	ta.Placeholder = i18n.T(localeOf(deps), i18n.ScreenBoardBannerEditPh)
 	ta.CharLimit = 16000
 	ta.SetWidth(72)
 	ta.SetHeight(14)
@@ -112,9 +113,10 @@ func (m boardBannerEditModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m boardBannerEditModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 編輯看板 banner · Edit Banner "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenBoardBannerEditTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
@@ -130,7 +132,7 @@ func (m boardBannerEditModel) View() string {
 	if m.err != "" {
 		b.WriteString("\n  " + StyleError.Render("⚠ "+m.err) + "\n")
 	}
-	b.WriteString("\n  " + StyleHelp.Render("Ctrl+S save · Esc cancel · 空 body 等於清掉 banner"))
+	b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenBoardBannerEditHelpLine)))
 	b.WriteString("\n")
 	return b.String()
 }

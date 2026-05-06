@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/markdown"
 	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
@@ -33,14 +34,15 @@ type postComposeModel struct {
 }
 
 func newPostComposeModel(deps Deps, boardID, parentID int64) postComposeModel {
+	loc := localeOf(deps)
 	ti := textinput.New()
-	ti.Placeholder = "標題 title"
+	ti.Placeholder = i18n.T(loc, i18n.ScreenPostComposeTitlePh)
 	ti.CharLimit = 64
 	ti.Width = 60
 	ti.Focus()
 
 	ta := textarea.New()
-	ta.Placeholder = "內容 body…"
+	ta.Placeholder = i18n.T(loc, i18n.ScreenPostComposeBodyPh)
 	ta.CharLimit = 8000
 	ta.SetWidth(72)
 	ta.SetHeight(12)
@@ -68,7 +70,7 @@ func newPostComposeModel(deps Deps, boardID, parentID int64) postComposeModel {
 				m.boardID = parent.BoardID
 			}
 			m.title.SetValue(rePrefix(parent.Title))
-			m.body.SetValue(quoteArticleForReply(parent))
+			m.body.SetValue(quoteArticleForReply(parent, loc))
 			// Land focus on the body so the user can start typing the reply
 			// straight away — the prefilled title is usually fine as-is.
 			m.title.Blur()
@@ -95,11 +97,16 @@ func rePrefix(title string) string {
 
 // quoteArticleForReply renders the parent article as a markdown blockquote
 // suitable for pre-filling a reply body. Mirrors mail's quoteForReply.
-func quoteArticleForReply(parent *store.Article) string {
+// The reply body lands in the COMPOSER's textarea and is then sent to
+// other users (broadcast + the article itself), so we use the composer's
+// locale here rather than the recipient's. The "wrote" suffix is the only
+// localised piece.
+func quoteArticleForReply(parent *store.Article, loc i18n.Locale) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "> %s · %s 寫道:\n>\n",
+	fmt.Fprintf(&b, "> %s · %s %s:\n>\n",
 		parent.AuthorUserID,
 		parent.CreatedAt.Format("2006-01-02 15:04"),
+		i18n.T(loc, i18n.ScreenPostComposeWroteSuffix),
 	)
 	for _, line := range strings.Split(parent.Body, "\n") {
 		b.WriteString("> ")
@@ -171,8 +178,9 @@ func (m *postComposeModel) toggleFocus() {
 // current user as author and never restores foreign-authored pushes.
 func (m *postComposeModel) importFromBody() {
 	raw := m.body.Value()
+	loc := localeOf(m.deps)
 	if strings.TrimSpace(raw) == "" {
-		m.err = "貼上 markdown（含 --- frontmatter ---）後再按 Ctrl+I"
+		m.err = i18n.T(loc, i18n.ScreenPostComposeFMHintPaste)
 		return
 	}
 	parsed, err := markdown.Parse(raw)
@@ -183,7 +191,7 @@ func (m *postComposeModel) importFromBody() {
 	if parsed.Title == "" && parsed.Body == strings.TrimRight(raw, "\n") {
 		// Parser didn't find frontmatter — body is verbatim. Tell the
 		// user so they don't think Ctrl+I silently no-op'd.
-		m.err = "找不到 frontmatter（請貼上開頭含 --- ... --- 的 markdown）"
+		m.err = i18n.T(loc, i18n.ScreenPostComposeFMHintMissing)
 		return
 	}
 	if parsed.Title != "" {
@@ -230,26 +238,31 @@ func (m postComposeModel) submit() (tea.Model, tea.Cmd) {
 	// it even when offline. Self-reply (replying to your own article) is
 	// silenced — the user already saw their own action.
 	if m.parent != nil && m.deps.Notify != nil && m.parent.AuthorID != u.ID {
+		// Webhook title + body render in the RECIPIENT's locale (their
+		// phone, their language) — see plan §5. recipientLocale loads
+		// users.locale and falls back to Default on any error.
+		recLoc := recipientLocale(m.deps, m.parent.AuthorID)
 		m.deps.Notify.Dispatch(notify.Event{
 			Kind:       notify.KindReply,
 			ToUserID:   m.parent.AuthorID,
 			FromUserID: u.UserID,
-			Title:      fmt.Sprintf("[BBS] %s 回了你的文章", u.UserID),
-			Body:       fmt.Sprintf("%s\n\n原文: %s", title, Truncate(m.parent.Title, 60)),
+			Title:      i18n.Tf(recLoc, i18n.NotifyReplyTitle, u.UserID),
+			Body:       i18n.Tf(recLoc, i18n.NotifyReplyBody, title, Truncate(m.parent.Title, 60)),
 		})
 	}
 	return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardView, BoardID: m.boardID} }
 }
 
 func (m postComposeModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
 	if m.parent != nil {
-		b.WriteString(StyleHeader.Render(" 回文 Reply "))
-		b.WriteString("\n  " + StyleDim.Render(fmt.Sprintf("回覆 #%d  %s · %s",
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenPostComposeTitleReply)))
+		b.WriteString("\n  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenPostComposeReplyPrefix,
 			m.parent.ID, m.parent.AuthorUserID, m.parent.Title)))
 	} else {
-		b.WriteString(StyleHeader.Render(" 發表新文章 New Post "))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenPostComposeTitleNew)))
 	}
 	b.WriteString("\n\n")
 

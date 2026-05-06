@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 )
 
 // bioEditModel is a single-textarea form screen reached from the user
@@ -24,7 +25,7 @@ type bioEditModel struct {
 
 func newBioEditModel(deps Deps) bioEditModel {
 	ta := textarea.New()
-	ta.Placeholder = "你的 bio…（最多 1024 字元，可換行）"
+	ta.Placeholder = i18n.T(localeOf(deps), i18n.ScreenBioEditPlaceholder)
 	ta.CharLimit = 4096 // generous client-side; auth.ValidateBio is the source of truth (rune count)
 	ta.SetWidth(72)
 	ta.SetHeight(10)
@@ -86,9 +87,10 @@ func (m bioEditModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m bioEditModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 修改 Bio Edit bio "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenBioEditTitle)))
 	b.WriteString("\n\n")
 
 	b.WriteString("  " + StyleDim.Render("Bio (free-form, ≤ 1024 chars; newlines OK):") + "\n")

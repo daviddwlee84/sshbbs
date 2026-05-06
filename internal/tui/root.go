@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
@@ -142,7 +143,7 @@ func (m Root) View() string {
 	if m.helpVisible {
 		// Replace the sub view entirely so the keymap reads cleanly. Toast
 		// suppressed too — would distract from a help screen.
-		return renderHelp(m.activeScreen)
+		return renderHelp(localeOf(m.deps), m.activeScreen)
 	}
 	v := m.sub.View()
 	if m.toast != "" && time.Now().Before(m.toastUntil) {
@@ -164,7 +165,10 @@ func (m Root) guestWriteBlocked(to Screen) tea.Cmd {
 	}
 	switch to {
 	case ScreenPostCompose, ScreenWBCompose, ScreenMailCompose, ScreenAdminUsers, ScreenArticleEdit:
-		return func() tea.Msg { return ErrorMsg{Err: errors.New("guest 為唯讀帳號 (read-only)")} }
+		loc := localeOf(m.deps)
+		return func() tea.Msg {
+			return ErrorMsg{Err: errors.New(i18n.T(loc, i18n.ErrorGuestReadOnly))}
+		}
 	}
 	return nil
 }
@@ -178,7 +182,10 @@ func (m Root) navigateNonAdminBlocked(to Screen) tea.Cmd {
 	if m.deps.User != nil && m.deps.User.Role == store.RoleAdmin {
 		return nil
 	}
-	return func() tea.Msg { return ErrorMsg{Err: errors.New("管理員專用 (admin only)")} }
+	loc := localeOf(m.deps)
+	return func() tea.Msg {
+		return ErrorMsg{Err: errors.New(i18n.T(loc, i18n.ErrorAdminOnly))}
+	}
 }
 
 func (m Root) navigate(n NavigateMsg) (tea.Model, tea.Cmd) {

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -34,13 +35,14 @@ type articleEditModel struct {
 }
 
 func newArticleEditModel(deps Deps, articleID int64) articleEditModel {
+	loc := localeOf(deps)
 	ti := textinput.New()
-	ti.Placeholder = "標題 title"
+	ti.Placeholder = i18n.T(loc, i18n.ScreenArticleEditTitlePh)
 	ti.CharLimit = 64
 	ti.Width = 60
 
 	ta := textarea.New()
-	ta.Placeholder = "內容 body…"
+	ta.Placeholder = i18n.T(loc, i18n.ScreenArticleEditBodyPh)
 	ta.CharLimit = 8000
 	ta.SetWidth(72)
 	ta.SetHeight(12)
@@ -172,9 +174,10 @@ func (m articleEditModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m articleEditModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 編輯文章 Edit Post "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenArticleEditTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {

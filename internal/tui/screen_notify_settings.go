@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
@@ -70,13 +71,14 @@ const (
 )
 
 func newNotifySettingsModel(deps Deps) notifySettingsModel {
+	loc := localeOf(deps)
 	m := notifySettingsModel{deps: deps}
 	m.editLabel = textinput.New()
-	m.editLabel.Placeholder = "label (任意便於辨識的名稱)"
+	m.editLabel.Placeholder = i18n.T(loc, i18n.ScreenNotifyEditLabelPh)
 	m.editLabel.CharLimit = 64
 	m.editLabel.Width = 60
 	m.editURL = textinput.New()
-	m.editURL.Placeholder = "Discord webhook URL / https://ntfy.sh/<topic> / 任何 HTTP(S) 端點"
+	m.editURL.Placeholder = i18n.T(loc, i18n.ScreenNotifyEditURLPh)
 	m.editURL.CharLimit = 512
 	m.editURL.Width = 60
 
@@ -240,7 +242,7 @@ func (m notifySettingsModel) savePrefs() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.prefsDirty = false
-	m.flash = "✓ 已儲存事件偏好"
+	m.flash = i18n.T(localeOf(m.deps), i18n.ScreenNotifyFlashPrefsSaved)
 	m.err = ""
 	return m, nil
 }
@@ -284,10 +286,11 @@ func (m *notifySettingsModel) toggleTarget() {
 		return
 	}
 	t.Enabled = want
+	loc := localeOf(m.deps)
 	if want {
-		m.flash = "✓ 已啟用 target #" + fmt.Sprint(t.ID)
+		m.flash = i18n.Tf(loc, i18n.ScreenNotifyFlashEnabled, t.ID)
 	} else {
-		m.flash = "✓ 已停用 target #" + fmt.Sprint(t.ID)
+		m.flash = i18n.Tf(loc, i18n.ScreenNotifyFlashDisabled, t.ID)
 	}
 	m.err = ""
 }
@@ -353,7 +356,7 @@ func (m *notifySettingsModel) deleteTarget() {
 	if m.cursor >= m.rowCount() {
 		m.cursor = m.rowCount() - 1
 	}
-	m.flash = "✓ 已刪除 target"
+	m.flash = i18n.T(localeOf(m.deps), i18n.ScreenNotifyFlashDeleted)
 	m.err = ""
 }
 
@@ -405,6 +408,7 @@ func (m notifySettingsModel) submitEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	ctx := context.Background()
+	loc := localeOf(m.deps)
 	if m.editingID == 0 {
 		// Insert new.
 		id, err := m.deps.Store.Notify().AddTarget(ctx, m.deps.User.ID, label, url)
@@ -415,7 +419,7 @@ func (m notifySettingsModel) submitEdit() (tea.Model, tea.Cmd) {
 		// Re-list so created_at reflects the canonical row order.
 		ts, _ := m.deps.Store.Notify().ListTargets(ctx, m.deps.User.ID)
 		m.targets = ts
-		m.flash = fmt.Sprintf("✓ 已新增 target #%d", id)
+		m.flash = i18n.Tf(loc, i18n.ScreenNotifyFlashAdded, id)
 	} else {
 		// Update existing — preserve enabled state.
 		var enabled = true
@@ -431,7 +435,7 @@ func (m notifySettingsModel) submitEdit() (tea.Model, tea.Cmd) {
 		}
 		ts, _ := m.deps.Store.Notify().ListTargets(ctx, m.deps.User.ID)
 		m.targets = ts
-		m.flash = fmt.Sprintf("✓ 已更新 target #%d", m.editingID)
+		m.flash = i18n.Tf(loc, i18n.ScreenNotifyFlashUpdated, m.editingID)
 	}
 	m.mode = modeList
 	m.editingID = 0
@@ -440,9 +444,10 @@ func (m notifySettingsModel) submitEdit() (tea.Model, tea.Cmd) {
 }
 
 func (m notifySettingsModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 通知設定 Notification settings "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenNotifyTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
@@ -450,17 +455,17 @@ func (m notifySettingsModel) View() string {
 	}
 
 	// Section 1: prefs toggles.
-	b.WriteString("  " + StyleDim.Render("事件 Events") + "\n")
+	b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenNotifyEventsHeader)) + "\n")
 	prefsRows := []struct {
 		label string
 		on    bool
 		note  string
 	}{
-		{"推/噓 我的文章 (push)", m.prefs.OnPush, "someone pushed/booed my article"},
-		{"收到水球 (wb)", m.prefs.OnWB, "私訊 DM"},
-		{"收到站內信 (mail)", m.prefs.OnMail, "persistent threaded mail"},
-		{"有人回文 Re: (reply)", m.prefs.OnReply, "someone posted a Re: reply on my article"},
-		{"僅在離線時通知 only-when-offline", m.prefs.OnlyWhenOffline, "skip dispatch when I have a live session"},
+		{i18n.T(loc, i18n.ScreenNotifyLabelOnPush), m.prefs.OnPush, i18n.T(loc, i18n.ScreenNotifyHintOnPush)},
+		{i18n.T(loc, i18n.ScreenNotifyLabelOnWB), m.prefs.OnWB, i18n.T(loc, i18n.ScreenNotifyHintOnWB)},
+		{i18n.T(loc, i18n.ScreenNotifyLabelOnMail), m.prefs.OnMail, i18n.T(loc, i18n.ScreenNotifyHintOnMail)},
+		{i18n.T(loc, i18n.ScreenNotifyLabelOnReply), m.prefs.OnReply, i18n.T(loc, i18n.ScreenNotifyHintOnReply)},
+		{i18n.T(loc, i18n.ScreenNotifyLabelOffline), m.prefs.OnlyWhenOffline, i18n.T(loc, i18n.ScreenNotifyHintOffline)},
 	}
 	for i, r := range prefsRows {
 		marker := "  "
@@ -481,9 +486,9 @@ func (m notifySettingsModel) View() string {
 	}
 
 	// Section 2: target list.
-	b.WriteString("\n  " + StyleDim.Render("通知目標 Webhook targets") + "\n")
+	b.WriteString("\n  " + StyleDim.Render(i18n.T(loc, i18n.ScreenNotifyTargetsHeader)) + "\n")
 	if len(m.targets) == 0 {
-		b.WriteString("  " + StyleDim.Render("  (尚未設定 target — 按 a 新增)") + "\n")
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenNotifyNoTargets)) + "\n")
 	} else {
 		for i, t := range m.targets {
 			rowIdx := notifPrefCount + i
@@ -506,7 +511,7 @@ func (m notifySettingsModel) View() string {
 	}
 
 	// Add row.
-	addRow := "  + 新增 target Add new target"
+	addRow := i18n.T(loc, i18n.ScreenNotifyAddTarget)
 	if m.addRowIndex() == m.cursor && m.mode == modeList {
 		b.WriteString("▸ " + StyleHighlight.Render(addRow) + "\n")
 	} else {
@@ -532,7 +537,7 @@ func (m notifySettingsModel) View() string {
 	if m.flash != "" {
 		b.WriteString("\n  " + StyleSuccess.Render(m.flash))
 	}
-	b.WriteString("\n  " + StyleHelp.Render("j/k move · Space toggle/select · Ctrl+S save prefs · a 新增 · e 編輯 · t 啟停 · T 測試 · d 刪除 · Esc back"))
+	b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenNotifyHelpLine)))
 	b.WriteString("\n")
 	return b.String()
 }

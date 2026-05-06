@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/markdown"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
@@ -149,8 +150,9 @@ func (m articleExportModel) viewportLines() int {
 // Guests are blocked: they have no UserID we'd want to write to disk, and
 // they're a shared sentinel account anyway.
 func (m *articleExportModel) writeToDisk() {
+	loc := localeOf(m.deps)
 	if m.deps.User == nil || m.deps.User.Role == store.RoleGuest {
-		m.statusLine = "guest 不能寫檔 (read-only)"
+		m.statusLine = i18n.T(loc, i18n.ScreenArticleExportGuestNoWrite)
 		return
 	}
 	dir := filepath.Join("data", "exports", m.deps.User.UserID)
@@ -164,24 +166,26 @@ func (m *articleExportModel) writeToDisk() {
 		m.statusLine = "write: " + err.Error()
 		return
 	}
-	m.statusLine = "已寫入 " + path
+	m.statusLine = i18n.Tf(loc, i18n.ScreenArticleExportWroteFile, path)
 }
 
 // copyToClipboard pushes the rendered markdown via OSC 52. Most modern
 // terminals honour this; some (Terminal.app default) silently drop it.
 func (m *articleExportModel) copyToClipboard() {
+	loc := localeOf(m.deps)
 	if len(m.rendered) > osc52Limit {
-		m.statusLine = fmt.Sprintf("⚠ %dB 超過 OSC52 上限，可能被終端機截斷；改按 3 寫檔", len(m.rendered))
+		m.statusLine = i18n.Tf(loc, i18n.ScreenArticleExportOSC52Truncated, len(m.rendered))
 	} else {
-		m.statusLine = "已複製到剪貼簿（需終端機支援 OSC 52）"
+		m.statusLine = i18n.T(loc, i18n.ScreenArticleExportOSC52Copied)
 	}
 	_ = emitClipboardOSC52(m.rendered)
 }
 
 func (m articleExportModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 匯出 markdown · Export "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenArticleExportTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
@@ -203,8 +207,7 @@ func (m articleExportModel) View() string {
 		b.WriteString("\n")
 	}
 
-	help := "1 純內文 · 2 含留言 · 3 寫檔 · c 剪貼簿 (OSC52) · j/k 卷動 · Esc 返回"
-	b.WriteString("\n  " + StyleHelp.Render(help))
+	b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenArticleExportHelpLine)))
 	if m.statusLine != "" {
 		b.WriteString("\n  " + StyleSuccess.Render(m.statusLine))
 	}

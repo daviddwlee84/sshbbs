@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 )
 
 // HelpEntry is one row in a screen's keymap. Keys is the displayed shortcut
@@ -210,11 +212,16 @@ var screenHelp = map[Screen][]helpSection{
 }
 
 // helpGlobals are the cross-screen keys shown on every help page so users
-// don't need to discover them per screen.
-var helpGlobals = []HelpEntry{
-	{"?", "show this help (any key dismisses)"},
-	{"Ctrl+U", "open 水球 inbox (logged-in only)"},
-	{"Ctrl+C", "disconnect"},
+// don't need to discover them per screen. The "open WB inbox" hint is
+// the only locale-aware row — its label uses 水球 in zh-TW; en mode
+// falls back to "Water Balloon" via i18n. Computed lazily by globalHelp
+// so it picks up the active locale at render time.
+func globalHelp(loc i18n.Locale) []HelpEntry {
+	return []HelpEntry{
+		{"?", "show this help (any key dismisses)"},
+		{"Ctrl+U", i18n.T(loc, i18n.HelpGlobalWBInbox)},
+		{"Ctrl+C", "disconnect"},
+	}
 }
 
 // isFormScreen reports whether a screen is a text-entry form whose
@@ -254,9 +261,11 @@ var helpBox = lipgloss.NewStyle().
 
 // renderHelp builds the full-screen help overlay for the given screen.
 // Includes per-screen entries (or a fallback message) plus the globals.
-func renderHelp(s Screen) string {
+// loc localises the overlay title and the globals row that mentions
+// 水球 (en mode renders "Water Balloon" instead).
+func renderHelp(loc i18n.Locale, s Screen) string {
 	var b strings.Builder
-	b.WriteString(StyleHeader.Render(" 鍵盤捷徑說明 Help ") + "\n\n")
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.HelpOverlayTitle)) + "\n\n")
 
 	sections, ok := screenHelp[s]
 	if !ok {
@@ -277,7 +286,7 @@ func renderHelp(s Screen) string {
 	}
 
 	b.WriteString(StyleDim.Render("  Global") + "\n")
-	for _, e := range helpGlobals {
+	for _, e := range globalHelp(loc) {
 		b.WriteString(formatHelpRow(e) + "\n")
 	}
 

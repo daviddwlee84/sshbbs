@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -80,9 +81,10 @@ func (m mailInboxModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m mailInboxModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 信箱 Mail "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenMailInboxTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
@@ -242,9 +244,10 @@ func (m mailThreadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m mailThreadModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 信件 Thread #%d ", m.threadID)))
+	b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenMailThreadTitle, m.threadID)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
@@ -343,7 +346,7 @@ func newMailComposeModel(deps Deps, recipient string, parentID int64) mailCompos
 				s = "Re: " + s
 			}
 			subj.SetValue(s)
-			body.SetValue(quoteForReply(parent))
+			body.SetValue(quoteForReply(parent, localeOf(deps)))
 		}
 	}
 
@@ -495,7 +498,7 @@ func (m mailComposeModel) submit() (tea.Model, tea.Cmd) {
 // quoteForReply renders the parent mail as a markdown blockquote suitable
 // for pre-filling the reply body. Format:
 //
-//	> alice · 2026-05-06 14:23 寫道:
+//	> alice · 2026-05-06 14:23 wrote:
 //	>
 //	> previous body line 1
 //	> previous body line 2
@@ -504,12 +507,14 @@ func (m mailComposeModel) submit() (tea.Model, tea.Cmd) {
 //
 // Empty lines in the parent body are still prefixed with "> " so the
 // blockquote stays contiguous (matches RFC 3676 / common email-client
-// convention).
-func quoteForReply(parent *store.Mail) string {
+// convention). The "wrote" verb localises to the COMPOSER's locale —
+// the quoted block lands in their textarea before they edit and send.
+func quoteForReply(parent *store.Mail, loc i18n.Locale) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "> %s · %s 寫道:\n>\n",
+	fmt.Fprintf(&b, "> %s · %s %s:\n>\n",
 		parent.FromUserIDStr,
 		parent.CreatedAt.Format("2006-01-02 15:04"),
+		i18n.T(loc, i18n.ScreenMailWroteSuffix),
 	)
 	for _, line := range strings.Split(parent.Body, "\n") {
 		b.WriteString("> ")
@@ -521,12 +526,13 @@ func quoteForReply(parent *store.Mail) string {
 }
 
 func (m mailComposeModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
 	if m.parentID == 0 {
-		b.WriteString(StyleHeader.Render(" 寫信 New Mail "))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenMailComposeTitleNew)))
 	} else {
-		b.WriteString(StyleHeader.Render(" 回信 Reply "))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenMailComposeTitleReply)))
 	}
 	b.WriteString("\n\n")
 

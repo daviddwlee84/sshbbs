@@ -2,11 +2,11 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -52,12 +52,13 @@ func (m boardSplashModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m boardSplashModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
 	if m.board != nil {
-		b.WriteString(StyleHeader.Render(fmt.Sprintf(" 看板 banner · %s ", m.board.Name)))
+		b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenBoardSplashTitleNamed, m.board.Name)))
 	} else {
-		b.WriteString(StyleHeader.Render(" 看板 banner "))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenBoardSplashTitleBare)))
 	}
 	b.WriteString("\n\n")
 

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -27,7 +28,7 @@ type boardListModel struct {
 func newBoardListModel(deps Deps) boardListModel {
 	boards, err := deps.Store.Boards().List(context.Background())
 	ti := textinput.New()
-	ti.Placeholder = "搜尋看板 / search boards"
+	ti.Placeholder = i18n.T(localeOf(deps), i18n.ScreenBoardListSearchPlaceholder)
 	ti.CharLimit = 32
 	ti.Width = 40
 	m := boardListModel{deps: deps, boards: boards, loadErr: err, search: ti}
@@ -146,33 +147,34 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m boardListModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 看板列表 Boards "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenBoardListTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
-		b.WriteString("  " + StyleError.Render("⚠ load failed: "+m.loadErr.Error()) + "\n")
+		b.WriteString("  " + StyleError.Render(i18n.Tf(loc, i18n.ScreenBoardListLoadFailed, m.loadErr.Error())) + "\n")
 		return b.String()
 	}
 
 	// Search row: live input above the list while focused; passive
-	// "[搜尋: foo · N 筆 …]" indicator when a confirmed filter is active.
+	// "[search: foo · N match …]" indicator when a confirmed filter is active.
 	switch {
 	case m.searchActive:
-		b.WriteString("  " + StyleDim.Render("搜尋 / : ") + m.search.View() + "\n")
-		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("(%d 筆符合 · Enter 套用 · Esc 取消)", len(m.filtered))) + "\n\n")
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenBoardListSearchPrompt)) + m.search.View() + "\n")
+		b.WriteString("  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenBoardListSearchInProgress, len(m.filtered))) + "\n\n")
 	case m.filter != "":
-		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("[搜尋: %s · %d 筆 · / 修改 · Esc 清除]", m.filter, len(m.filtered))) + "\n\n")
+		b.WriteString("  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenBoardListSearchActive, m.filter, len(m.filtered))) + "\n\n")
 	}
 
 	if len(m.filtered) == 0 {
 		if m.filter != "" {
-			b.WriteString("  " + StyleDim.Render("(沒有符合的看板)") + "\n")
+			b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenBoardListNoMatch)) + "\n")
 		} else {
-			b.WriteString("  " + StyleDim.Render("(no boards yet)") + "\n")
+			b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenBoardListNoBoards)) + "\n")
 		}
-		b.WriteString("\n  " + StyleHelp.Render(boardListFooter()) + "\n")
+		b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenBoardListHelpLine)) + "\n")
 		return b.String()
 	}
 
@@ -200,11 +202,7 @@ func (m boardListModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render(boardListFooter()))
+	b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenBoardListHelpLine)))
 	b.WriteString("\n")
 	return b.String()
-}
-
-func boardListFooter() string {
-	return "↑/↓ j/k move · Enter/→/l open · / search · ? help · Esc/←/h back · Ctrl+C disconnect"
 }

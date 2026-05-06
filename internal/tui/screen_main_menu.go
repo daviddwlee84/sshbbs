@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -22,24 +23,29 @@ type mainMenuModel struct {
 }
 
 func newMainMenuModel(deps Deps) mainMenuModel {
+	loc := localeOf(deps)
 	items := []menuItem{
-		{label: "看板列表 Boards", hint: "browse and read articles", to: ScreenBoardList},
-		{label: "水球 Water Balloons", hint: "private messages with online users", to: ScreenWBInbox},
-		{label: "線上使用者 Online", hint: "see who's logged in", to: ScreenOnline},
-		{label: "信箱 Mail", hint: "persistent threaded mail", to: ScreenMailInbox},
-		{label: "個人設定 User settings", hint: "password / bio / notifications", to: ScreenUserSettings},
+		{label: i18n.T(loc, i18n.ScreenMainMenuItemBoards), hint: i18n.T(loc, i18n.ScreenMainMenuHintBoards), to: ScreenBoardList},
+		{label: i18n.T(loc, i18n.ScreenMainMenuItemWB), hint: i18n.T(loc, i18n.ScreenMainMenuHintWB), to: ScreenWBInbox},
+		{label: i18n.T(loc, i18n.ScreenMainMenuItemOnline), hint: i18n.T(loc, i18n.ScreenMainMenuHintOnline), to: ScreenOnline},
+		{label: i18n.T(loc, i18n.ScreenMainMenuItemMail), hint: i18n.T(loc, i18n.ScreenMainMenuHintMail), to: ScreenMailInbox},
+		{label: i18n.T(loc, i18n.ScreenMainMenuItemSettings), hint: i18n.T(loc, i18n.ScreenMainMenuHintSettings), to: ScreenUserSettings},
 	}
 	// Admin gets an extra entry; positioned before the Quit row so the
 	// numeric shortcut for Quit always lands on the LAST item regardless
 	// of role (the "5 quits" shortcut becomes "6 quits" for admin).
 	if deps.User != nil && deps.User.Role == store.RoleAdmin {
 		items = append(items, menuItem{
-			label: "管理 Admin",
-			hint:  "manage user roles",
+			label: i18n.T(loc, i18n.ScreenMainMenuItemAdmin),
+			hint:  i18n.T(loc, i18n.ScreenMainMenuHintAdmin),
 			to:    ScreenAdminUsers,
 		})
 	}
-	items = append(items, menuItem{label: "離線 Quit", hint: "disconnect", to: -1})
+	items = append(items, menuItem{
+		label: i18n.T(loc, i18n.ScreenMainMenuItemQuit),
+		hint:  i18n.T(loc, i18n.ScreenMainMenuHintQuit),
+		to:    -1,
+	})
 	return mainMenuModel{deps: deps, items: items}
 }
 
@@ -82,6 +88,7 @@ func (m mainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m mainMenuModel) View() string {
 	u := m.deps.User
+	loc := localeOf(m.deps)
 	nick := u.Nickname
 	if nick == "" {
 		nick = u.UserID
@@ -89,11 +96,11 @@ func (m mainMenuModel) View() string {
 
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(fmt.Sprintf(" SSH-BBS · %s (%s) ", nick, u.UserID)))
+	b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenMainMenuTitle, nick, u.UserID)))
 	b.WriteString("\n\n")
 
 	if u.LastLoginAt.Valid {
-		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("上次登入 %s · 累計登入 %d 次 · 發文 %d 篇",
+		b.WriteString("  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenMainMenuLastLoginLine,
 			u.LastLoginAt.Time.Format("2006-01-02 15:04"),
 			u.NumLogins,
 			u.NumPosts,
@@ -102,7 +109,7 @@ func (m mainMenuModel) View() string {
 	}
 
 	b.WriteString("  ")
-	b.WriteString(StyleHeader.Render(" 主選單 Main Menu "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenMainMenuMidHeader)))
 	b.WriteString("\n\n")
 
 	for i, it := range m.items {
@@ -120,7 +127,7 @@ func (m mainMenuModel) View() string {
 	}
 
 	b.WriteString("\n  ")
-	b.WriteString(StyleHelp.Render(fmt.Sprintf("↑/↓ j/k move · Enter/→/l choose · 1-%d jump · ? help · q quit", len(m.items))))
+	b.WriteString(StyleHelp.Render(i18n.Tf(loc, i18n.ScreenMainMenuHelpLine, len(m.items))))
 	b.WriteString("\n")
 	return b.String()
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -70,9 +71,10 @@ func (m wbInboxModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m wbInboxModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 水球 Water Balloons "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenWBInboxTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {
@@ -284,9 +286,10 @@ func (m wbComposeModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m wbComposeModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 丟水球 Send Water Balloon "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenWBComposeTitle)))
 	b.WriteString("\n\n")
 
 	if m.sent != "" {
@@ -501,13 +504,14 @@ func (m wbThreadModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m wbThreadModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
 	headerLabel := m.cpUserID
 	if m.deps.User != nil && m.cpID == m.deps.User.ID {
 		headerLabel = "📝 yourself (memo)"
 	}
-	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 對話 with %s ", headerLabel)))
+	b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenWBThreadTitle, headerLabel)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {

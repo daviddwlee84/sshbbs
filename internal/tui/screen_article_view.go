@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
@@ -277,14 +278,15 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = ""
 			return m, nil
 		case "D":
+			loc := localeOf(m.deps)
 			if m.pushCursor >= 0 {
 				if !m.canDeletePush(m.pushCursor) {
-					m.err = "權限不足 (only the push author or a mod can delete it)"
+					m.err = i18n.T(loc, i18n.ErrorPermDenied) + " (only the push author or a mod can delete it)"
 					return m, nil
 				}
 			} else {
 				if !m.canDeleteArticle() {
-					m.err = "權限不足 (only the author or a mod can delete)"
+					m.err = i18n.T(loc, i18n.ErrorPermDenied) + " (only the author or a mod can delete)"
 					return m, nil
 				}
 			}
@@ -296,7 +298,7 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if !m.canEditArticle() {
-				m.err = "權限不足 (only the author or a mod can edit)"
+				m.err = i18n.T(localeOf(m.deps), i18n.ErrorPermDenied) + " (only the author or a mod can edit)"
 				return m, nil
 			}
 			id := m.article.ID
@@ -416,14 +418,15 @@ func (m articleViewModel) openPush(k store.PushKind) tea.Model {
 	// in PushRepo.Create is the authoritative gate (handles races between
 	// sessions), but rejecting here gives a friendlier error than the
 	// raw sentinel and avoids opening the input box at all.
+	loc := localeOf(m.deps)
 	if m.article != nil {
 		switch m.article.CommentsMode {
 		case store.CommentsModeLocked:
-			m.err = "本文已鎖定留言"
+			m.err = i18n.T(loc, i18n.ErrorCommentsLocked)
 			return m
 		case store.CommentsModeArrowsOnly:
 			if k != store.PushKindArrow {
-				m.err = "本文僅開放箭頭留言"
+				m.err = i18n.T(loc, i18n.ErrorCommentsArrowsOnly)
 				return m
 			}
 		}
@@ -487,9 +490,10 @@ func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pushIn.Blur()
 		return m, nil
 	case "enter":
+		loc := localeOf(m.deps)
 		body := strings.TrimSpace(m.pushIn.Value())
 		if body == "" && m.pushKind != store.PushKindArrow {
-			m.err = "comment required for 推/噓"
+			m.err = i18n.T(loc, i18n.ScreenArticleViewErrPushBodyEmpty)
 			return m, nil
 		}
 		// Late gate: re-check comments_mode in case the cached article
@@ -498,13 +502,13 @@ func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.article != nil {
 			switch m.article.CommentsMode {
 			case store.CommentsModeLocked:
-				m.err = "本文已鎖定留言"
+				m.err = i18n.T(loc, i18n.ErrorCommentsLocked)
 				m.pushing = false
 				m.pushIn.Blur()
 				return m, nil
 			case store.CommentsModeArrowsOnly:
 				if m.pushKind != store.PushKindArrow {
-					m.err = "本文僅開放箭頭留言"
+					m.err = i18n.T(loc, i18n.ErrorCommentsArrowsOnly)
 					m.pushing = false
 					m.pushIn.Blur()
 					return m, nil
@@ -536,12 +540,15 @@ func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Webhook notification to the article's author. Skip self-pushes
 		// — pushing on your own article doesn't need to wake your phone.
+		// Title renders in the RECIPIENT's locale (their phone, their
+		// language) — see plan §5.
 		if m.deps.Notify != nil && m.article.AuthorID != u.ID {
+			recLoc := recipientLocale(m.deps, m.article.AuthorID)
 			m.deps.Notify.Dispatch(notify.Event{
 				Kind:       notify.KindPush,
 				ToUserID:   m.article.AuthorID,
 				FromUserID: u.UserID,
-				Title:      fmt.Sprintf("[BBS] %s %s 了你的文章", u.UserID, kindLabel(m.pushKind)),
+				Title:      i18n.Tf(recLoc, i18n.NotifyPushTitle, u.UserID, kindLabel(m.pushKind)),
 				Body:       fmt.Sprintf("%s\n\n%s", Truncate(m.article.Title, 60), body),
 			})
 		}
@@ -560,10 +567,11 @@ func (m articleViewModel) View() string {
 		return "\n  " + StyleDim.Render("(no article)") + "\n"
 	}
 	a := m.article
+	loc := localeOf(m.deps)
 
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 文章 #%d · %s ", a.ID, a.AuthorUserID)))
+	b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenArticleViewTitle, a.ID, a.AuthorUserID)))
 	b.WriteString("\n\n")
 
 	b.WriteString("  " + StyleDim.Render("Title: ") + a.Title + "\n")
@@ -571,9 +579,9 @@ func (m articleViewModel) View() string {
 	b.WriteString("  " + StyleDim.Render("Score: ") + fmt.Sprintf("%d", a.RecommendScore) + "\n")
 	switch a.CommentsMode {
 	case store.CommentsModeArrowsOnly:
-		b.WriteString("  " + StyleDim.Render("留言:  ") + StyleError.Render("[箭] 僅開放箭頭") + "\n")
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenArticleViewCommentsPrefix)) + StyleError.Render(i18n.T(loc, i18n.ScreenArticleViewCommentsArrowsOnly)) + "\n")
 	case store.CommentsModeLocked:
-		b.WriteString("  " + StyleDim.Render("留言:  ") + StyleError.Render("[鎖] 已關閉留言") + "\n")
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenArticleViewCommentsPrefix)) + StyleError.Render(i18n.T(loc, i18n.ScreenArticleViewCommentsLocked)) + "\n")
 	}
 	b.WriteString("\n")
 
@@ -594,7 +602,7 @@ func (m articleViewModel) View() string {
 	}
 
 	if len(m.pushes) > 0 {
-		b.WriteString("\n  " + StyleDim.Render(fmt.Sprintf("── 推文 (%d) ──", len(m.pushes))) + "\n")
+		b.WriteString("\n  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenArticleViewPushesHeader, len(m.pushes))) + "\n")
 		for i, p := range m.pushes {
 			ts := p.CreatedAt.Format("01/02 15:04")
 			gutter := "  "
@@ -625,32 +633,32 @@ func (m articleViewModel) View() string {
 		}
 		b.WriteString("  " + StyleHelp.Render("Enter send · Esc cancel"))
 	} else if m.pendingDelete {
-		prompt := "確定刪除這篇文章? (y/N)"
+		prompt := i18n.T(loc, i18n.ScreenArticleViewConfirmDeleteArt)
 		if m.pushCursor >= 0 && m.pushCursor < len(m.pushes) {
-			prompt = fmt.Sprintf("確定刪除推文 #%d? (y/N)", m.pushCursor+1)
+			prompt = i18n.Tf(loc, i18n.ScreenArticleViewConfirmDeletePush, m.pushCursor+1)
 		}
 		b.WriteString("\n  " + StyleError.Render("⚠ "+prompt))
 	} else if m.pickingCommentsMode {
-		b.WriteString("\n  " + StyleHeader.Render(" 留言模式 "))
-		b.WriteString("\n  " + StyleHelp.Render("1 開放  2 僅箭頭  3 鎖文  Esc 取消"))
+		b.WriteString("\n  " + StyleHeader.Render(i18n.T(loc, i18n.ScreenArticleViewModeBanner)))
+		b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenArticleViewModeOptions)))
 	} else {
-		help := "j/k scroll · y 匯出"
+		help := i18n.T(loc, i18n.ScreenArticleViewHelpBase)
 		if m.canPush() {
-			help += " · + 推 · - 噓 · = → · r 回文"
+			help += i18n.T(loc, i18n.ScreenArticleViewHelpPushKinds)
 		}
 		if len(m.pushes) > 0 {
-			help += " · p/P 選推文"
+			help += i18n.T(loc, i18n.ScreenArticleViewHelpSelectPush)
 		}
 		if m.canEditArticle() {
-			help += " · E 編輯"
+			help += i18n.T(loc, i18n.ScreenArticleViewHelpEdit)
 		}
 		if m.canSetCommentsMode() {
-			help += " · M 留言模式"
+			help += i18n.T(loc, i18n.ScreenArticleViewHelpModeToggle)
 		}
 		if m.pushCursor >= 0 && m.canDeletePush(m.pushCursor) {
-			help += " · D 刪除推文"
+			help += i18n.T(loc, i18n.ScreenArticleViewHelpDeletePush)
 		} else if m.canDeleteArticle() {
-			help += " · D 刪除文章"
+			help += i18n.T(loc, i18n.ScreenArticleViewHelpDeleteArt)
 		}
 		help += " · ? help · Esc/← back · Ctrl+C disconnect"
 		if m.err != "" {

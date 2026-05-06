@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 )
 
 type onlineModel struct {
@@ -79,14 +80,15 @@ func (m onlineModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m onlineModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(fmt.Sprintf(" 線上使用者 Online (%d) ", len(m.users))))
+	b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenOnlineTitle, len(m.users))))
 	b.WriteString("\n\n")
 
 	if len(m.users) == 0 {
-		b.WriteString("  " + StyleDim.Render("(nobody else online)") + "\n")
-		b.WriteString("\n  " + StyleHelp.Render("Esc/←/h back · Q quit to menu"))
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenOnlineEmpty)) + "\n")
+		b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenOnlineEmptyHelpLine)))
 		return b.String()
 	}
 
@@ -112,7 +114,7 @@ func (m onlineModel) View() string {
 		}
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l 丟水球 · t 對話 thread · Esc/←/h back · Q quit"))
+	b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenOnlineHelpLine)))
 	b.WriteString("\n")
 	return b.String()
 }

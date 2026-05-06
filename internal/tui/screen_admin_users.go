@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -93,8 +94,9 @@ func (m adminUsersModel) applyRole(target store.Role) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	u := m.users[m.cursor]
+	loc := localeOf(m.deps)
 	if u.Role == target {
-		m.toast = fmt.Sprintf("%s 已是 %s", u.UserID, target)
+		m.toast = i18n.Tf(loc, i18n.ScreenAdminUsersToastAlready, u.UserID, target)
 		return m, nil
 	}
 	// Last-admin guard: refuse to demote the only remaining admin.
@@ -105,7 +107,7 @@ func (m adminUsersModel) applyRole(target store.Role) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if count <= 1 {
-			m.toast = "無法解除最後一名管理員 (cannot demote the last admin)"
+			m.toast = i18n.T(loc, i18n.ScreenAdminUsersToastNoLast)
 			return m, nil
 		}
 	}
@@ -123,9 +125,10 @@ func (m adminUsersModel) applyRole(target store.Role) (tea.Model, tea.Cmd) {
 }
 
 func (m adminUsersModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 使用者管理 Admin Users "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenAdminUsersTitle)))
 	b.WriteString("\n\n")
 
 	if m.loadErr != nil {

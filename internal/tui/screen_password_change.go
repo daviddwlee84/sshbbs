@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 )
 
 // Form-style screen reachable in two modes:
@@ -45,9 +46,10 @@ func newPasswordChangeModel(deps Deps) passwordChangeModel {
 		ti.Width = 32
 		inputs[i] = ti
 	}
-	inputs[pwFieldCurrent].Placeholder = "目前密碼"
-	inputs[pwFieldNew].Placeholder = "新密碼 (≥ 6)"
-	inputs[pwFieldConfirm].Placeholder = "再次輸入新密碼"
+	loc := localeOf(deps)
+	inputs[pwFieldCurrent].Placeholder = i18n.T(loc, i18n.ScreenPasswordChangePhCurrent)
+	inputs[pwFieldNew].Placeholder = i18n.T(loc, i18n.ScreenPasswordChangePhNew)
+	inputs[pwFieldConfirm].Placeholder = i18n.T(loc, i18n.ScreenPasswordChangePhConfirm)
 	inputs[pwFieldCurrent].Focus()
 	return passwordChangeModel{deps: deps, inputs: inputs}
 }
@@ -122,8 +124,9 @@ func (m passwordChangeModel) submit() (tea.Model, tea.Cmd) {
 		m.err = "internal error: no user"
 		return m, nil
 	}
+	loc := localeOf(m.deps)
 	if err := auth.VerifyPasswordHash(m.deps.User.PasswordHash, current); err != nil {
-		m.err = "目前密碼錯誤"
+		m.err = i18n.T(loc, i18n.ScreenPasswordChangeErrWrong)
 		return m, nil
 	}
 	if err := auth.ValidatePassword(newPw); err != nil {
@@ -131,11 +134,11 @@ func (m passwordChangeModel) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if newPw != confirm {
-		m.err = "新密碼與確認不一致"
+		m.err = i18n.T(loc, i18n.ScreenPasswordChangeErrMismatch)
 		return m, nil
 	}
 	if newPw == current {
-		m.err = "新密碼不可與目前密碼相同"
+		m.err = i18n.T(loc, i18n.ScreenPasswordChangeErrSame)
 		return m, nil
 	}
 
@@ -162,16 +165,21 @@ func (m passwordChangeModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m passwordChangeModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
 	if m.deps.MustChangePassword {
-		b.WriteString(StyleHeader.Render("  === 修改密碼 (首次登入必須修改) ==="))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenPasswordChangeTitleMust)))
 	} else {
-		b.WriteString(StyleHeader.Render("  === 修改密碼 Change password ==="))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenPasswordChangeTitle)))
 	}
 	b.WriteString("\n\n")
 
-	labels := []string{"目前密碼 current", "新密碼 new (≥ 6)", "再次輸入 confirm"}
+	labels := []string{
+		i18n.T(loc, i18n.ScreenPasswordChangeLabelCurrent),
+		i18n.T(loc, i18n.ScreenPasswordChangeLabelNew),
+		i18n.T(loc, i18n.ScreenPasswordChangeLabelConfirm),
+	}
 	for i, label := range labels {
 		b.WriteString("  " + StyleDim.Render(label))
 		b.WriteString("\n  ")
@@ -184,16 +192,16 @@ func (m passwordChangeModel) View() string {
 	}
 	if m.success {
 		if m.deps.MustChangePassword {
-			b.WriteString("  " + StyleSuccess.Render("✓ 已更新，將進入主選單…") + "\n\n")
+			b.WriteString("  " + StyleSuccess.Render(i18n.T(loc, i18n.ScreenPasswordChangeOKToMenu)) + "\n\n")
 		} else {
-			b.WriteString("  " + StyleSuccess.Render("✓ 已更新") + "\n\n")
+			b.WriteString("  " + StyleSuccess.Render(i18n.T(loc, i18n.ScreenPasswordChangeOK)) + "\n\n")
 		}
 	}
 	escHint := "Esc disconnect"
 	if !m.deps.MustChangePassword {
 		escHint = "Esc back"
 	}
-	b.WriteString("  " + StyleHelp.Render("Tab/↓ next · Shift+Tab/↑ prev · Enter submit · "+escHint))
+	b.WriteString("  " + StyleHelp.Render("Tab/↓ next · Shift+Tab/↑ prev · Enter submit · " + escHint))
 	b.WriteString("\n")
 	return b.String()
 }

@@ -38,7 +38,8 @@ func TestOnline_EmptyList(t *testing.T) {
 		t.Errorf("got %d users, want 0", len(m.users))
 	}
 	out := m.View()
-	if !contains(out, "nobody else online") {
+	// Default locale is zh-TW; assert the canonical empty-state hint.
+	if !contains(out, "目前沒有其他人在線") {
 		t.Errorf("View missing empty-state hint, got: %q", out)
 	}
 }

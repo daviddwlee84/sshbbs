@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -32,7 +33,7 @@ func newBoardViewModel(deps Deps, boardID int64) boardViewModel {
 		return boardViewModel{deps: deps, loadErr: err}
 	}
 	ti := textinput.New()
-	ti.Placeholder = "搜尋標題 / search title"
+	ti.Placeholder = i18n.T(localeOf(deps), i18n.ScreenBoardViewSearchPlaceholder)
 	ti.CharLimit = 64
 	ti.Width = 50
 	m := boardViewModel{deps: deps, board: board, search: ti}
@@ -234,12 +235,13 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m boardViewModel) View() string {
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
 	if m.board != nil {
-		b.WriteString(StyleHeader.Render(fmt.Sprintf(" 看板 %s · %s ", m.board.Name, m.board.Title)))
+		b.WriteString(StyleHeader.Render(i18n.Tf(loc, i18n.ScreenBoardViewTitleNamed, m.board.Name, m.board.Title)))
 	} else {
-		b.WriteString(StyleHeader.Render(" 看板 "))
+		b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenBoardViewTitleBare)))
 	}
 	b.WriteString("\n\n")
 	b.WriteString(m.renderBanner())
@@ -253,17 +255,17 @@ func (m boardViewModel) View() string {
 	// table's row layout stays predictable across show/hide.
 	switch {
 	case m.searchActive:
-		b.WriteString("  " + StyleDim.Render("搜尋 / 標題: ") + m.search.View() + "\n")
-		b.WriteString("  " + StyleDim.Render("(Enter 套用 · Esc 取消)") + "\n\n")
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenBoardViewSearchPrompt)) + m.search.View() + "\n")
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenBoardViewSearchInProgress)) + "\n\n")
 	case m.filter != "":
-		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("[搜尋: %s · %d 筆 · / 修改 · Esc 清除]", m.filter, len(m.articles))) + "\n\n")
+		b.WriteString("  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenBoardViewSearchActive, m.filter, len(m.articles))) + "\n\n")
 	}
 
 	if len(m.articles) == 0 {
 		hint := "(no articles yet — press p to write one)"
 		help := "p post · / search · ? help · Esc/←/h back · Ctrl+C disconnect"
 		if m.filter != "" {
-			hint = "(沒有符合的文章)"
+			hint = i18n.T(loc, i18n.ScreenBoardViewNoArticles)
 		}
 		if m.isGuest() {
 			hint = "(no articles yet)"
@@ -291,7 +293,7 @@ func (m boardViewModel) View() string {
 	)
 	b.WriteString(StyleDim.Render(header))
 	if m.sort == store.SortByScoreDesc {
-		b.WriteString("  " + StyleDim.Render("[排序: 推文量↓]"))
+		b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenBoardViewSortByScore)))
 	}
 	b.WriteString("\n")
 
@@ -338,8 +340,9 @@ func (m boardViewModel) View() string {
 		}
 	}
 
-	help := "↑/↓ j/k move · Enter/→/l open · p post · / search · s sort · ? help · Esc/←/h back · Ctrl+C disconnect"
+	help := i18n.T(loc, i18n.ScreenBoardViewHelpLine)
 	if m.isGuest() {
+		// Guest variant strips the "p post" affordance — they can't write.
 		help = "↑/↓ j/k move · Enter/→/l open · / search · s sort · ? help · Esc/←/h back · Ctrl+C disconnect"
 	}
 	help = m.appendBannerHelp(help)

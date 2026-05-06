@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 )
 
 const (
@@ -45,7 +46,7 @@ func newRegisterModel(deps Deps) registerModel {
 	inputs[regFieldPassword].Width = 32
 
 	inputs[regFieldNickname] = textinput.New()
-	inputs[regFieldNickname].Placeholder = "愛麗絲"
+	inputs[regFieldNickname].Placeholder = i18n.T(localeOf(deps), i18n.ScreenRegisterNicknamePh)
 	inputs[regFieldNickname].CharLimit = 64
 	inputs[regFieldNickname].Width = 40
 
@@ -120,22 +121,23 @@ func (m registerModel) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m registerModel) View() string {
+	loc := localeOf(m.deps)
 	if m.success {
-		return StyleSuccess.Render("\n  ✓ 註冊成功！") +
-			"\n\n  請重新連線：\n\n    " +
+		return StyleSuccess.Render(i18n.T(loc, i18n.ScreenRegisterSuccess)) +
+			i18n.T(loc, i18n.ScreenRegisterRetryHint) +
 			StyleHighlight.Render(fmt.Sprintf("ssh %s@<host> -p <port>", m.done)) +
-			"\n\n  按任意鍵結束。\n"
+			i18n.T(loc, i18n.ScreenRegisterDoneHint)
 	}
 
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render("  === 註冊新帳號 ==="))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenRegisterTitle)))
 	b.WriteString("\n\n")
 
 	labels := []string{
-		"帳號 user id (3-12, 字母開頭, 英數+底線)",
-		"密碼 password (≥ 6)",
-		"暱稱 nickname",
+		i18n.T(loc, i18n.ScreenRegisterFieldUserID),
+		i18n.T(loc, i18n.ScreenRegisterFieldPassword),
+		i18n.T(loc, i18n.ScreenRegisterFieldNickname),
 		"Email (optional)",
 	}
 	for i, label := range labels {

@@ -22,11 +22,11 @@ type userSettingsModel struct {
 func newUserSettingsModel(deps Deps) userSettingsModel {
 	loc := localeOf(deps)
 	items := []menuItem{
-		{label: "修改密碼 Change password", hint: "current → new → confirm", to: ScreenPasswordChange},
-		{label: "修改 Bio Edit bio", hint: "free-form profile blurb", to: ScreenBioEdit},
+		{label: i18n.T(loc, i18n.ScreenUserSettingsItemPassword), hint: i18n.T(loc, i18n.ScreenUserSettingsHintPassword), to: ScreenPasswordChange},
+		{label: i18n.T(loc, i18n.ScreenUserSettingsItemBio), hint: i18n.T(loc, i18n.ScreenUserSettingsHintBio), to: ScreenBioEdit},
 		{label: i18n.T(loc, i18n.ScreenUserSettingsLocale), hint: i18n.T(loc, i18n.ScreenUserSettingsLocaleHint), to: ScreenLocaleSettings},
-		{label: "通知設定 Notification settings", hint: "webhook targets + per-event toggles", to: ScreenNotifySettings},
-		{label: "返回 Back", hint: "main menu", to: ScreenMainMenu},
+		{label: i18n.T(loc, i18n.ScreenUserSettingsItemNotify), hint: i18n.T(loc, i18n.ScreenUserSettingsHintNotify), to: ScreenNotifySettings},
+		{label: i18n.T(loc, i18n.ScreenUserSettingsItemBack), hint: i18n.T(loc, i18n.ScreenUserSettingsHintBack), to: ScreenMainMenu},
 	}
 	return userSettingsModel{deps: deps, items: items}
 }
@@ -66,17 +66,18 @@ func (m userSettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m userSettingsModel) View() string {
 	u := m.deps.User
+	loc := localeOf(m.deps)
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(StyleHeader.Render(" 個人設定 User Settings "))
+	b.WriteString(StyleHeader.Render(i18n.T(loc, i18n.ScreenUserSettingsTitle)))
 	b.WriteString("\n\n")
 
 	if u != nil {
-		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("帳號 %s · 角色 %s", u.UserID, u.Role)))
+		b.WriteString("  " + StyleDim.Render(i18n.Tf(loc, i18n.ScreenUserSettingsAccountLine, u.UserID, u.Role)))
 		b.WriteString("\n")
 		bio := strings.TrimSpace(u.Bio)
 		if bio == "" {
-			b.WriteString("  " + StyleDim.Render("(尚未填寫 bio)"))
+			b.WriteString("  " + StyleDim.Render(i18n.T(loc, i18n.ScreenUserSettingsNoBio)))
 		} else {
 			// Show only the first line of bio in the header so the menu
 			// itself stays compact; the bio-edit screen owns the full view.
@@ -103,7 +104,7 @@ func (m userSettingsModel) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n  " + StyleHelp.Render("↑/↓ j/k move · Enter/→/l choose · 1-5 jump · Esc/←/h back"))
+	b.WriteString("\n  " + StyleHelp.Render(i18n.T(loc, i18n.ScreenUserSettingsHelpLine)))
 	b.WriteString("\n")
 	return b.String()
 }
