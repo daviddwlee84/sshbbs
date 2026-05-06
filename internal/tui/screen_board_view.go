@@ -60,6 +60,22 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case ArticleCommentsModeChangedMsg:
+		if m.board != nil && msg.BoardID == m.board.ID {
+			// Mode flip doesn't reorder, but we still re-anchor the cursor
+			// for parity with the pin handler — if a future change adds
+			// list ordering by comments_mode, we won't lose the highlight.
+			anchorID := int64(0)
+			if m.cursor < len(m.articles) {
+				anchorID = m.articles[m.cursor].ID
+			}
+			ctx := context.Background()
+			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
+				m.articles = arts
+				m.cursor = findCursorByID(arts, anchorID)
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "backspace", "left", "h":
@@ -193,11 +209,23 @@ func (m boardViewModel) View() string {
 			score = "X" + fmt.Sprintf("%d", -a.RecommendScore)
 		}
 		// Pinned (板規 / 置頂) articles surface a leading "[M] " marker —
-		// the same glyph PTT uses for M-marked posts. Costs 4 visual cols
-		// of the title cell; long titles still get truncated by Truncate.
+		// the same glyph PTT uses for M-marked posts. Locked / arrows-only
+		// articles stack additional [鎖] / [箭] badges so users see the
+		// constraint before opening the article. Long titles still get
+		// truncated by Truncate.
 		title := a.Title
+		var prefix string
 		if a.PinnedAt.Valid {
-			title = "[M] " + a.Title
+			prefix += "[M]"
+		}
+		switch a.CommentsMode {
+		case store.CommentsModeLocked:
+			prefix += "[鎖]"
+		case store.CommentsModeArrowsOnly:
+			prefix += "[箭]"
+		}
+		if prefix != "" {
+			title = prefix + " " + a.Title
 		}
 		row := fmt.Sprintf(" %s  %s  %s  %s  %s",
 			PadRight(fmt.Sprintf("%d", i+1), idxW),

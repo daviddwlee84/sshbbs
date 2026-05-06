@@ -37,6 +37,10 @@ type articleViewModel struct {
 	// pushCursor: -1 = no push selected (D targets article); 0..len-1 = D targets that push.
 	pendingDelete bool
 	pushCursor    int
+
+	// pickingCommentsMode: showing the 1/2/3 picker overlay for the
+	// mod-only M shortcut (open / arrows-only / locked).
+	pickingCommentsMode bool
 }
 
 // renderBody runs the article body through glamour with word-wrap set
@@ -117,6 +121,13 @@ func (m articleViewModel) canEditArticle() bool {
 	return m.deps.User.Role.AtLeast(store.RoleMod)
 }
 
+// canSetCommentsMode gates the M shortcut. Mirrors board-view canPin —
+// pinning and locking comments are both moderation actions that do NOT
+// admit the article author. Mod+ only.
+func (m articleViewModel) canSetCommentsMode() bool {
+	return m.deps.User != nil && m.deps.User.Role.AtLeast(store.RoleMod)
+}
+
 func (m articleViewModel) Init() tea.Cmd { return nil }
 
 func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -160,12 +171,26 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ArticleCommentsModeChangedMsg:
+		if m.article != nil && msg.ArticleID == m.article.ID {
+			// Mode flip happened in another session — refetch so the badge
+			// and the +/-/= gates pick up the new value. No body re-render
+			// needed (only the header changes).
+			if a, err := m.deps.Store.Articles().GetByID(context.Background(), m.article.ID); err == nil {
+				m.article = a
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.pushing {
 			return m.updatePushInput(msg)
 		}
 		if m.pendingDelete {
 			return m.updateDeleteConfirm(msg)
+		}
+		if m.pickingCommentsMode {
+			return m.updateCommentsModePicker(msg)
 		}
 		switch msg.String() {
 		case "esc", "backspace", "left", "h":
@@ -287,6 +312,17 @@ func (m articleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return NavigateMsg{To: ScreenArticleExport, ArticleID: id, BoardID: boardID}
 			}
+		case "M":
+			// Open the comments-mode picker. Mod+ only — silent no-op
+			// otherwise so non-mods don't get a confusing toast for a key
+			// the help line doesn't even surface to them (mirrors M on
+			// the board view).
+			if m.article == nil || !m.canSetCommentsMode() {
+				return m, nil
+			}
+			m.pickingCommentsMode = true
+			m.err = ""
+			return m, nil
 		}
 	}
 	return m, nil
@@ -362,12 +398,72 @@ func (m articleViewModel) viewportLines() int {
 }
 
 func (m articleViewModel) openPush(k store.PushKind) tea.Model {
+	// Early gate based on the cached article state. The store-side check
+	// in PushRepo.Create is the authoritative gate (handles races between
+	// sessions), but rejecting here gives a friendlier error than the
+	// raw sentinel and avoids opening the input box at all.
+	if m.article != nil {
+		switch m.article.CommentsMode {
+		case store.CommentsModeLocked:
+			m.err = "本文已鎖定留言"
+			return m
+		case store.CommentsModeArrowsOnly:
+			if k != store.PushKindArrow {
+				m.err = "本文僅開放箭頭留言"
+				return m
+			}
+		}
+	}
 	m.pushing = true
 	m.pushKind = k
 	m.pushIn.SetValue("")
 	m.pushIn.Focus()
 	m.err = ""
 	return m
+}
+
+// updateCommentsModePicker handles 1/2/3/Esc while the comments-mode
+// picker overlay is up. On a successful flip it refetches the article
+// locally and broadcasts ArticleCommentsModeChangedMsg so other live
+// sessions update their badges and gates.
+func (m articleViewModel) updateCommentsModePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.article == nil || m.deps.User == nil {
+		m.pickingCommentsMode = false
+		return m, nil
+	}
+	var mode store.CommentsMode
+	switch msg.String() {
+	case "1":
+		mode = store.CommentsModeOpen
+	case "2":
+		mode = store.CommentsModeArrowsOnly
+	case "3":
+		mode = store.CommentsModeLocked
+	case "esc", "n", "N":
+		m.pickingCommentsMode = false
+		return m, nil
+	default:
+		return m, nil
+	}
+	ctx := context.Background()
+	u := m.deps.User
+	if err := m.deps.Store.Articles().SetCommentsMode(ctx, m.article.ID, u.ID, u.Role, mode); err != nil {
+		m.err = err.Error()
+		m.pickingCommentsMode = false
+		return m, nil
+	}
+	if a, err := m.deps.Store.Articles().GetByID(ctx, m.article.ID); err == nil {
+		m.article = a
+	}
+	m.pickingCommentsMode = false
+	if m.deps.Broker != nil {
+		m.deps.Broker.SendToAll(u.ID, ArticleCommentsModeChangedMsg{
+			BoardID:   m.article.BoardID,
+			ArticleID: m.article.ID,
+			Mode:      string(mode),
+		})
+	}
+	return m, nil
 }
 
 func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -381,6 +477,25 @@ func (m articleViewModel) updatePushInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if body == "" && m.pushKind != store.PushKindArrow {
 			m.err = "comment required for 推/噓"
 			return m, nil
+		}
+		// Late gate: re-check comments_mode in case the cached article
+		// is stale. Server-side will also reject (PushRepo.Create), but
+		// catching here surfaces a friendlier message than the sentinel.
+		if m.article != nil {
+			switch m.article.CommentsMode {
+			case store.CommentsModeLocked:
+				m.err = "本文已鎖定留言"
+				m.pushing = false
+				m.pushIn.Blur()
+				return m, nil
+			case store.CommentsModeArrowsOnly:
+				if m.pushKind != store.PushKindArrow {
+					m.err = "本文僅開放箭頭留言"
+					m.pushing = false
+					m.pushIn.Blur()
+					return m, nil
+				}
+			}
 		}
 		ctx := context.Background()
 		u := m.deps.User
@@ -429,6 +544,12 @@ func (m articleViewModel) View() string {
 	b.WriteString("  " + StyleDim.Render("Title: ") + a.Title + "\n")
 	b.WriteString("  " + StyleDim.Render("Date:  ") + a.CreatedAt.Format("2006-01-02 15:04:05") + "\n")
 	b.WriteString("  " + StyleDim.Render("Score: ") + fmt.Sprintf("%d", a.RecommendScore) + "\n")
+	switch a.CommentsMode {
+	case store.CommentsModeArrowsOnly:
+		b.WriteString("  " + StyleDim.Render("留言:  ") + StyleError.Render("[箭] 僅開放箭頭") + "\n")
+	case store.CommentsModeLocked:
+		b.WriteString("  " + StyleDim.Render("留言:  ") + StyleError.Render("[鎖] 已關閉留言") + "\n")
+	}
 	b.WriteString("\n")
 
 	body := m.rendered
@@ -484,6 +605,9 @@ func (m articleViewModel) View() string {
 			prompt = fmt.Sprintf("確定刪除推文 #%d? (y/N)", m.pushCursor+1)
 		}
 		b.WriteString("\n  " + StyleError.Render("⚠ "+prompt))
+	} else if m.pickingCommentsMode {
+		b.WriteString("\n  " + StyleHeader.Render(" 留言模式 "))
+		b.WriteString("\n  " + StyleHelp.Render("1 開放  2 僅箭頭  3 鎖文  Esc 取消"))
 	} else {
 		help := "j/k scroll · y 匯出"
 		if m.canPush() {
@@ -494,6 +618,9 @@ func (m articleViewModel) View() string {
 		}
 		if m.canEditArticle() {
 			help += " · E 編輯"
+		}
+		if m.canSetCommentsMode() {
+			help += " · M 留言模式"
 		}
 		if m.pushCursor >= 0 && m.canDeletePush(m.pushCursor) {
 			help += " · D 刪除推文"

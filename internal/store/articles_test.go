@@ -375,6 +375,96 @@ func TestArticles_SetPinned_NotFound(t *testing.T) {
 	}
 }
 
+func TestArticles_SetCommentsMode_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "rules", "body")
+
+	if a.CommentsMode != store.CommentsModeOpen {
+		t.Fatalf("freshly created article: CommentsMode = %q, want %q", a.CommentsMode, store.CommentsModeOpen)
+	}
+
+	for _, mode := range []store.CommentsMode{
+		store.CommentsModeArrowsOnly,
+		store.CommentsModeLocked,
+		store.CommentsModeOpen,
+	} {
+		if err := st.Articles().SetCommentsMode(ctx, a.ID, mod.ID, store.RoleMod, mode); err != nil {
+			t.Fatalf("SetCommentsMode(%s): %v", mode, err)
+		}
+		got, err := st.Articles().GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if got.CommentsMode != mode {
+			t.Errorf("after SetCommentsMode(%s): CommentsMode = %q, want %q", mode, got.CommentsMode, mode)
+		}
+	}
+}
+
+func TestArticles_SetCommentsMode_RequiresMod(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "post", "body")
+
+	// Author themselves cannot lock their own post — comments mode is a
+	// moderation action (parity with SetPinned, NOT Update/Delete).
+	for _, role := range []store.Role{store.RoleGuest, store.RoleUser} {
+		t.Run("denied_"+string(role), func(t *testing.T) {
+			err := st.Articles().SetCommentsMode(ctx, a.ID, user.ID, role, store.CommentsModeLocked)
+			if !errors.Is(err, store.ErrPermissionDenied) {
+				t.Errorf("got %v, want ErrPermissionDenied", err)
+			}
+			got, _ := st.Articles().GetByID(ctx, a.ID)
+			if got.CommentsMode != store.CommentsModeOpen {
+				t.Errorf("mode changed despite permission denial: got %q", got.CommentsMode)
+			}
+		})
+	}
+
+	for _, role := range []store.Role{store.RoleMod, store.RoleAdmin} {
+		t.Run("allowed_"+string(role), func(t *testing.T) {
+			if err := st.Articles().SetCommentsMode(ctx, a.ID, user.ID, role, store.CommentsModeArrowsOnly); err != nil {
+				t.Fatalf("SetCommentsMode(%s): %v", role, err)
+			}
+			// reset for next iteration
+			_ = st.Articles().SetCommentsMode(ctx, a.ID, user.ID, role, store.CommentsModeOpen)
+		})
+	}
+}
+
+func TestArticles_SetCommentsMode_RejectsInvalidMode(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "post", "body")
+
+	for _, bad := range []store.CommentsMode{"", "invalid", "OPEN", "LOCKED"} {
+		err := st.Articles().SetCommentsMode(ctx, a.ID, mod.ID, store.RoleMod, bad)
+		if !errors.Is(err, store.ErrInvalidCommentsMode) {
+			t.Errorf("SetCommentsMode(%q): got %v, want ErrInvalidCommentsMode", bad, err)
+		}
+	}
+	got, _ := st.Articles().GetByID(ctx, a.ID)
+	if got.CommentsMode != store.CommentsModeOpen {
+		t.Errorf("mode mutated by invalid input: got %q", got.CommentsMode)
+	}
+}
+
+func TestArticles_SetCommentsMode_NotFound(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	if err := st.Articles().SetCommentsMode(ctx, 9999, mod.ID, store.RoleMod, store.CommentsModeLocked); !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("got %v, want ErrArticleNotFound", err)
+	}
+}
+
 func TestArticles_ListByBoard_PinnedFirst(t *testing.T) {
 	ctx := context.Background()
 	st := storetest.New(t)

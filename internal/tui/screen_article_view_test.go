@@ -636,6 +636,254 @@ func TestArticleView_IgnoresUnrelatedArticleUpdated(t *testing.T) {
 	}
 }
 
+// promoteToMod swaps the deps' user for one with RoleMod, mirroring the
+// SetRole + role-bump pattern used elsewhere in this file. Returns the new
+// deps so the caller can construct a fresh model with mod context.
+func promoteToMod(t *testing.T, deps Deps) Deps {
+	t.Helper()
+	mod := storetest.MustUser(t, deps.Store, "modder", "")
+	if err := deps.Store.Users().SetRole(context.Background(), mod.ID, store.RoleMod); err != nil {
+		t.Fatalf("SetRole: %v", err)
+	}
+	mod.Role = store.RoleMod
+	out := deps
+	out.User = mod
+	return out
+}
+
+// `M` opens the comments-mode picker for a mod+; non-mods get a silent no-op.
+func TestArticleView_M_OpensPickerForMod(t *testing.T) {
+	deps, art := seedArticle(t)
+
+	// As regular user: M is a silent no-op.
+	m := newArticleViewModel(deps, art.ID)
+	model, _ := m.Update(keyOf("M"))
+	got := model.(articleViewModel)
+	if got.pickingCommentsMode {
+		t.Error("non-mod entered comments-mode picker on M (should no-op)")
+	}
+
+	// As mod: M opens the picker.
+	modDeps := promoteToMod(t, deps)
+	m = newArticleViewModel(modDeps, art.ID)
+	model, _ = m.Update(keyOf("M"))
+	got = model.(articleViewModel)
+	if !got.pickingCommentsMode {
+		t.Error("mod did not enter comments-mode picker on M")
+	}
+}
+
+// 1/2/3 select the three modes and persist via SetCommentsMode; Esc cancels.
+func TestArticleView_PickerSelectionsCallStore(t *testing.T) {
+	cases := []struct {
+		key  string
+		want store.CommentsMode
+	}{
+		{"1", store.CommentsModeOpen},
+		{"2", store.CommentsModeArrowsOnly},
+		{"3", store.CommentsModeLocked},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.want), func(t *testing.T) {
+			deps, art := seedArticle(t)
+			modDeps := promoteToMod(t, deps)
+			m := newArticleViewModel(modDeps, art.ID)
+			m.pickingCommentsMode = true
+
+			model, _ := m.Update(keyOf(tc.key))
+			got := model.(articleViewModel)
+			if got.pickingCommentsMode {
+				t.Error("picker still open after selection")
+			}
+			fresh, _ := deps.Store.Articles().GetByID(context.Background(), art.ID)
+			if fresh.CommentsMode != tc.want {
+				t.Errorf("DB CommentsMode = %q, want %q", fresh.CommentsMode, tc.want)
+			}
+			if got.article.CommentsMode != tc.want {
+				t.Errorf("model CommentsMode = %q, want %q (refetch missed?)", got.article.CommentsMode, tc.want)
+			}
+		})
+	}
+}
+
+// Esc / n / N inside the picker cancels without writing to the DB.
+func TestArticleView_PickerEscCancels(t *testing.T) {
+	for _, key := range []string{"esc", "n", "N"} {
+		t.Run(key, func(t *testing.T) {
+			deps, art := seedArticle(t)
+			modDeps := promoteToMod(t, deps)
+			m := newArticleViewModel(modDeps, art.ID)
+			m.pickingCommentsMode = true
+
+			model, _ := m.Update(keyOf(key))
+			got := model.(articleViewModel)
+			if got.pickingCommentsMode {
+				t.Error("picker still open after cancel")
+			}
+			fresh, _ := deps.Store.Articles().GetByID(context.Background(), art.ID)
+			if fresh.CommentsMode != store.CommentsModeOpen {
+				t.Errorf("CommentsMode mutated despite cancel: %q", fresh.CommentsMode)
+			}
+		})
+	}
+}
+
+// Picker-driven flip broadcasts ArticleCommentsModeChangedMsg to other live
+// sessions of OTHER users (Broker.SendToAll skips the sender's own sessions).
+func TestArticleView_PickerBroadcastsToOtherSessions(t *testing.T) {
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	if err := st.Users().SetRole(context.Background(), mod.ID, store.RoleMod); err != nil {
+		t.Fatalf("SetRole: %v", err)
+	}
+	mod.Role = store.RoleMod
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	a, _ := st.Articles().Create(context.Background(), board.ID, mod.ID, mod.UserID, "rules", "body")
+
+	br := chat.NewBroker()
+	bobRec := &recordingSender{}
+	br.Register(&chat.Session{UserID: bob.ID, UserIDStr: bob.UserID, Program: bobRec})
+
+	deps := Deps{Store: st, User: mod, Broker: br}
+	m := newArticleViewModel(deps, a.ID)
+	m.pickingCommentsMode = true
+
+	_, _ = m.Update(keyOf("3")) // locked
+
+	if len(bobRec.msgs) != 1 {
+		t.Fatalf("bob got %d msgs, want 1", len(bobRec.msgs))
+	}
+	chg, ok := bobRec.msgs[0].(ArticleCommentsModeChangedMsg)
+	if !ok {
+		t.Fatalf("got %T, want ArticleCommentsModeChangedMsg", bobRec.msgs[0])
+	}
+	if chg.ArticleID != a.ID || chg.BoardID != board.ID || chg.Mode != string(store.CommentsModeLocked) {
+		t.Errorf("payload = %+v, want {BoardID:%d ArticleID:%d Mode:%q}", chg, board.ID, a.ID, store.CommentsModeLocked)
+	}
+}
+
+// `+` / `-` press on a locked article: rejected with toast, input never opens.
+func TestArticleView_PressPlusOnLockedShowsError(t *testing.T) {
+	deps, art := seedArticle(t)
+	if err := deps.Store.Articles().SetCommentsMode(context.Background(), art.ID,
+		deps.User.ID, store.RoleAdmin, store.CommentsModeLocked); err != nil {
+		t.Fatalf("seed lock: %v", err)
+	}
+	m := newArticleViewModel(deps, art.ID) // reload so model sees the locked state
+
+	for _, key := range []string{"+", "-", "="} {
+		t.Run(key, func(t *testing.T) {
+			model, _ := m.Update(keyOf(key))
+			got := model.(articleViewModel)
+			if got.pushing {
+				t.Errorf("input opened despite lock (key=%q)", key)
+			}
+			if got.err == "" {
+				t.Errorf("expected non-empty err on locked %q", key)
+			}
+		})
+	}
+}
+
+// `=` (arrow) on an arrows-only article opens the input; `+` and `-` reject.
+func TestArticleView_ArrowsOnlyAllowsArrowOnly(t *testing.T) {
+	deps, art := seedArticle(t)
+	if err := deps.Store.Articles().SetCommentsMode(context.Background(), art.ID,
+		deps.User.ID, store.RoleAdmin, store.CommentsModeArrowsOnly); err != nil {
+		t.Fatalf("seed arrows-only: %v", err)
+	}
+
+	for _, tc := range []struct {
+		key       string
+		wantOpen  bool
+		wantError bool
+	}{
+		{"+", false, true},
+		{"-", false, true},
+		{"=", true, false},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			m := newArticleViewModel(deps, art.ID)
+			model, _ := m.Update(keyOf(tc.key))
+			got := model.(articleViewModel)
+			if got.pushing != tc.wantOpen {
+				t.Errorf("pushing = %v, want %v", got.pushing, tc.wantOpen)
+			}
+			if (got.err != "") != tc.wantError {
+				t.Errorf("err = %q, wantError = %v", got.err, tc.wantError)
+			}
+		})
+	}
+}
+
+// ArticleCommentsModeChangedMsg for THIS article re-fetches so the cached
+// model picks up the new mode (and subsequent `+` / `-` gates properly).
+func TestArticleView_AcceptsCommentsModeChangedMsg(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	if m.article.CommentsMode != store.CommentsModeOpen {
+		t.Fatalf("seed: CommentsMode = %q, want open", m.article.CommentsMode)
+	}
+
+	// External actor flips the mode, then broadcasts.
+	if err := deps.Store.Articles().SetCommentsMode(context.Background(), art.ID,
+		deps.User.ID, store.RoleAdmin, store.CommentsModeLocked); err != nil {
+		t.Fatalf("external SetCommentsMode: %v", err)
+	}
+	model, _ := m.Update(ArticleCommentsModeChangedMsg{
+		BoardID: art.BoardID, ArticleID: art.ID, Mode: string(store.CommentsModeLocked),
+	})
+	got := model.(articleViewModel)
+	if got.article.CommentsMode != store.CommentsModeLocked {
+		t.Errorf("model CommentsMode = %q, want locked", got.article.CommentsMode)
+	}
+
+	// And `+` is now blocked.
+	model, _ = got.Update(keyOf("+"))
+	if model.(articleViewModel).pushing {
+		t.Error("+ still opens input after lock broadcast")
+	}
+}
+
+// Mismatched ArticleID must not mutate the model (parity with PushAddedMsg).
+func TestArticleView_IgnoresUnrelatedCommentsModeChanged(t *testing.T) {
+	deps, art := seedArticle(t)
+	m := newArticleViewModel(deps, art.ID)
+	model, _ := m.Update(ArticleCommentsModeChangedMsg{
+		BoardID: art.BoardID, ArticleID: art.ID + 999, Mode: string(store.CommentsModeLocked),
+	})
+	got := model.(articleViewModel)
+	if got.article.CommentsMode != store.CommentsModeOpen {
+		t.Errorf("CommentsMode mutated for unrelated msg: %q", got.article.CommentsMode)
+	}
+}
+
+// View() shows the [鎖] / [箭] badge for non-open comments_mode.
+func TestArticleView_RendersCommentsBadge(t *testing.T) {
+	for _, tc := range []struct {
+		mode       store.CommentsMode
+		wantSubstr string
+	}{
+		{store.CommentsModeArrowsOnly, "[箭]"},
+		{store.CommentsModeLocked, "[鎖]"},
+	} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			deps, art := seedArticle(t)
+			if err := deps.Store.Articles().SetCommentsMode(context.Background(), art.ID,
+				deps.User.ID, store.RoleAdmin, tc.mode); err != nil {
+				t.Fatalf("SetCommentsMode: %v", err)
+			}
+			m := newArticleViewModel(deps, art.ID)
+			m.width = 80
+			out := stripANSI(m.View())
+			if !strings.Contains(out, tc.wantSubstr) {
+				t.Errorf("View() lacks %q for mode %q:\n%s", tc.wantSubstr, tc.mode, out)
+			}
+		})
+	}
+}
+
 // PushAddedMsg for THIS article triggers a re-fetch so timestamps and
 // recommend_score reflect canonical DB state.
 func TestArticleView_AcceptsRelatedPush(t *testing.T) {

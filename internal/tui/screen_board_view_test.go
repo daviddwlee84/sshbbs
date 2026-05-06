@@ -340,6 +340,99 @@ func TestBoardView_RendersPinnedMarker(t *testing.T) {
 	}
 }
 
+// View() prefixes locked / arrows-only rows with "[鎖]" / "[箭]".
+func TestBoardView_RendersCommentsModeBadges(t *testing.T) {
+	for _, tc := range []struct {
+		mode       store.CommentsMode
+		wantSubstr string
+	}{
+		{store.CommentsModeLocked, "[鎖]"},
+		{store.CommentsModeArrowsOnly, "[箭]"},
+	} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			m, _, arts := newBoardViewFixture(t)
+			if err := m.deps.Store.Articles().SetCommentsMode(context.Background(),
+				arts[0].ID, m.deps.User.ID, store.RoleAdmin, tc.mode); err != nil {
+				t.Fatalf("SetCommentsMode: %v", err)
+			}
+			m = newBoardViewModel(m.deps, m.board.ID)
+			m.width = 80
+			out := m.View()
+			if !strings.Contains(out, tc.wantSubstr) {
+				t.Errorf("View() lacks %q for mode %q:\n%s", tc.wantSubstr, tc.mode, out)
+			}
+		})
+	}
+}
+
+// Pinned + locked stack: "[M][鎖] " in the rendered title.
+func TestBoardView_StacksPinAndLockBadges(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	if err := m.deps.Store.Articles().SetPinned(context.Background(),
+		arts[0].ID, m.deps.User.ID, store.RoleAdmin, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	if err := m.deps.Store.Articles().SetCommentsMode(context.Background(),
+		arts[0].ID, m.deps.User.ID, store.RoleAdmin, store.CommentsModeLocked); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	m = newBoardViewModel(m.deps, m.board.ID)
+	m.width = 80
+	out := m.View()
+	if !strings.Contains(out, "[M][鎖]") {
+		t.Errorf("View() lacks stacked [M][鎖] prefix:\n%s", out)
+	}
+}
+
+// ArticleCommentsModeChangedMsg for THIS board re-fetches the list so the
+// badge appears without a manual reload.
+func TestBoardView_AcceptsCommentsModeChangedForThisBoard(t *testing.T) {
+	m, board, arts := newBoardViewFixture(t)
+	if err := m.deps.Store.Articles().SetCommentsMode(context.Background(),
+		arts[0].ID, m.deps.User.ID, store.RoleAdmin, store.CommentsModeLocked); err != nil {
+		t.Fatalf("external lock: %v", err)
+	}
+	model, _ := m.Update(ArticleCommentsModeChangedMsg{
+		BoardID: board.ID, ArticleID: arts[0].ID, Mode: string(store.CommentsModeLocked),
+	})
+	got := model.(boardViewModel)
+
+	// Find the article in the reloaded slice.
+	var found *store.Article
+	for _, a := range got.articles {
+		if a.ID == arts[0].ID {
+			found = a
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("article missing from reloaded list")
+	}
+	if found.CommentsMode != store.CommentsModeLocked {
+		t.Errorf("CommentsMode = %q, want locked (refetch missed?)", found.CommentsMode)
+	}
+}
+
+// ArticleCommentsModeChangedMsg for a DIFFERENT board must NOT refetch.
+func TestBoardView_IgnoresCommentsModeChangedForOtherBoard(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	// Mutate the DB *after* the initial load, then send a msg for a
+	// different board. The model should still see the stale cached state.
+	if err := m.deps.Store.Articles().SetCommentsMode(context.Background(),
+		arts[0].ID, m.deps.User.ID, store.RoleAdmin, store.CommentsModeLocked); err != nil {
+		t.Fatalf("background lock: %v", err)
+	}
+	model, _ := m.Update(ArticleCommentsModeChangedMsg{
+		BoardID: m.board.ID + 999, ArticleID: arts[0].ID, Mode: string(store.CommentsModeLocked),
+	})
+	got := model.(boardViewModel)
+	for _, a := range got.articles {
+		if a.ID == arts[0].ID && a.CommentsMode == store.CommentsModeLocked {
+			t.Error("model refetched for unrelated-board msg")
+		}
+	}
+}
+
 // renderBanner produces no output when the board has no banner (won't
 // affect existing tests / layout).
 func TestBoardView_RenderBanner_Empty(t *testing.T) {

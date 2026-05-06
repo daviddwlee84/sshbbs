@@ -249,3 +249,81 @@ func TestPushes_ConcurrentScoreAtomicity(t *testing.T) {
 		t.Errorf("inserted %d, found %d in DB", N, len(pushes))
 	}
 }
+
+// TestPushes_Create_RejectsWhenLocked: when the parent article's
+// comments_mode is 'locked', Create returns ErrCommentsLocked for every
+// kind and does not insert a row or change the score.
+func TestPushes_Create_RejectsWhenLocked(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "rules", "body")
+	if err := st.Articles().SetCommentsMode(ctx, art.ID, mod.ID, store.RoleMod, store.CommentsModeLocked); err != nil {
+		t.Fatalf("SetCommentsMode: %v", err)
+	}
+
+	for _, kind := range []store.PushKind{store.PushKindPush, store.PushKindBoo, store.PushKindArrow} {
+		_, err := st.Pushes().Create(ctx, art.ID, bob.ID, bob.UserID, kind, "msg")
+		if !errors.Is(err, store.ErrCommentsLocked) {
+			t.Errorf("kind=%s: got %v, want ErrCommentsLocked", kind, err)
+		}
+	}
+
+	fresh, _ := st.Articles().GetByID(ctx, art.ID)
+	if fresh.RecommendScore != 0 {
+		t.Errorf("score changed despite all rejections: %d", fresh.RecommendScore)
+	}
+	pushes, _ := st.Pushes().ListByArticle(ctx, art.ID)
+	if len(pushes) != 0 {
+		t.Errorf("rows inserted despite rejection: %d", len(pushes))
+	}
+}
+
+// TestPushes_Create_ArrowsOnly: arrows succeed, push and boo are rejected
+// with ErrCommentsArrowsOnly. Score stays at 0 (arrows have zero delta).
+func TestPushes_Create_RejectsPushAndBooWhenArrowsOnly(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	bob := storetest.MustUser(t, st, "bob", "")
+	board := storetest.MustBoard(t, st, "Test")
+	art, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "faq", "body")
+	if err := st.Articles().SetCommentsMode(ctx, art.ID, mod.ID, store.RoleMod, store.CommentsModeArrowsOnly); err != nil {
+		t.Fatalf("SetCommentsMode: %v", err)
+	}
+
+	for _, kind := range []store.PushKind{store.PushKindPush, store.PushKindBoo} {
+		_, err := st.Pushes().Create(ctx, art.ID, bob.ID, bob.UserID, kind, "msg")
+		if !errors.Is(err, store.ErrCommentsArrowsOnly) {
+			t.Errorf("kind=%s: got %v, want ErrCommentsArrowsOnly", kind, err)
+		}
+	}
+
+	if _, err := st.Pushes().Create(ctx, art.ID, bob.ID, bob.UserID, store.PushKindArrow, "ok"); err != nil {
+		t.Errorf("arrow rejected: %v", err)
+	}
+
+	fresh, _ := st.Articles().GetByID(ctx, art.ID)
+	if fresh.RecommendScore != 0 {
+		t.Errorf("score = %d, want 0 (arrow only)", fresh.RecommendScore)
+	}
+	pushes, _ := st.Pushes().ListByArticle(ctx, art.ID)
+	if len(pushes) != 1 {
+		t.Errorf("inserted %d rows, want 1 (just the arrow)", len(pushes))
+	}
+}
+
+// TestPushes_Create_NotFoundWhenArticleMissing: surfaces ErrArticleNotFound
+// from the comments_mode SELECT before attempting any insert. Without this
+// gate, the FK on pushes.article_id would have eaten the bogus ID silently.
+func TestPushes_Create_NotFoundWhenArticleMissing(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	alice := storetest.MustUser(t, st, "alice", "")
+	_, err := st.Pushes().Create(ctx, 9999, alice.ID, alice.UserID, store.PushKindPush, "msg")
+	if !errors.Is(err, store.ErrArticleNotFound) {
+		t.Errorf("got %v, want ErrArticleNotFound", err)
+	}
+}

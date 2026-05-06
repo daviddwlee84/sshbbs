@@ -12,6 +12,16 @@ import (
 // when the row is missing. ErrPermissionDenied is shared with articles.
 var ErrPushNotFound = errors.New("push not found")
 
+// ErrCommentsLocked / ErrCommentsArrowsOnly are returned by PushRepo.Create
+// when the parent article's comments_mode rejects the requested kind. The
+// store-side check is the authoritative gate (TUI also gates early for nicer
+// errors, but multiple sessions can race against a mode change so the store
+// is the source of truth). See ArticleRepo.SetCommentsMode.
+var (
+	ErrCommentsLocked     = errors.New("comments are locked on this article")
+	ErrCommentsArrowsOnly = errors.New("only arrow comments are allowed on this article")
+)
+
 type PushKind string
 
 const (
@@ -107,6 +117,29 @@ func (r *PushRepo) Create(ctx context.Context, articleID, userID int64, userUser
 		return nil, err
 	}
 	defer tx.Rollback()
+
+	// Gate on the parent article's comments_mode inside the same tx; with
+	// writeMu held, the SELECT sees the latest committed value. This is the
+	// authoritative check — TUI gates early for nicer errors but races
+	// between sessions are resolved here.
+	var modeStr string
+	err = tx.QueryRowContext(ctx,
+		`SELECT comments_mode FROM articles WHERE id = ?`, articleID,
+	).Scan(&modeStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrArticleNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch CommentsMode(modeStr) {
+	case CommentsModeLocked:
+		return nil, ErrCommentsLocked
+	case CommentsModeArrowsOnly:
+		if kind != PushKindArrow {
+			return nil, ErrCommentsArrowsOnly
+		}
+	}
 
 	res, err := tx.ExecContext(ctx,
 		`INSERT INTO pushes (article_id, user_id, user_userid, kind, body) VALUES (?, ?, ?, ?, ?)`,

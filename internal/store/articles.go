@@ -7,6 +7,27 @@ import (
 	"time"
 )
 
+// CommentsMode controls who can leave 推/噓/→ pushes on an article. The
+// values are persisted as TEXT in articles.comments_mode (see migration
+// 0008). States are mutually exclusive — 'locked' is strictly stronger
+// than 'arrows_only', so a single-column enum keeps the precedence rule
+// unambiguous. Mod-only mutator: ArticleRepo.SetCommentsMode.
+type CommentsMode string
+
+const (
+	CommentsModeOpen       CommentsMode = "open"        // default — push, boo, arrow all allowed
+	CommentsModeArrowsOnly CommentsMode = "arrows_only" // only neutral arrow comments
+	CommentsModeLocked     CommentsMode = "locked"      // all pushes rejected
+)
+
+func (m CommentsMode) Valid() bool {
+	switch m {
+	case CommentsModeOpen, CommentsModeArrowsOnly, CommentsModeLocked:
+		return true
+	}
+	return false
+}
+
 type Article struct {
 	ID             int64
 	BoardID        int64
@@ -19,24 +40,29 @@ type Article struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	PinnedAt       sql.NullTime
+	CommentsMode   CommentsMode
 }
 
 type ArticleRepo struct{ s *Store }
 
 var (
-	ErrArticleNotFound  = errors.New("article not found")
-	ErrPermissionDenied = errors.New("permission denied")
+	ErrArticleNotFound     = errors.New("article not found")
+	ErrPermissionDenied    = errors.New("permission denied")
+	ErrInvalidCommentsMode = errors.New("invalid comments mode")
 )
 
 const articleColumns = `id, board_id, author_id, author_userid, title, body,
-	recommend_score, filemode, created_at, updated_at, pinned_at`
+	recommend_score, filemode, created_at, updated_at, pinned_at, comments_mode`
 
 func scanArticle(row interface{ Scan(...any) error }) (*Article, error) {
 	a := &Article{}
+	var commentsMode string
 	err := row.Scan(
 		&a.ID, &a.BoardID, &a.AuthorID, &a.AuthorUserID, &a.Title, &a.Body,
 		&a.RecommendScore, &a.Filemode, &a.CreatedAt, &a.UpdatedAt, &a.PinnedAt,
+		&commentsMode,
 	)
+	a.CommentsMode = CommentsMode(commentsMode)
 	return a, err
 }
 
@@ -202,5 +228,38 @@ func (r *ArticleRepo) SetPinned(ctx context.Context, articleID, requesterID int6
 			`UPDATE articles SET pinned_at = NULL WHERE id = ?`, articleID,
 		)
 	}
+	return err
+}
+
+// SetCommentsMode flips an article's comments_mode (open / arrows_only /
+// locked). Permission shape mirrors SetPinned: requesterRole must be
+// at-or-above mod, and unlike Update/Delete this does NOT admit the
+// article author — locking comments is a moderation action. Returns
+// ErrInvalidCommentsMode if mode is not one of the three constants,
+// ErrPermissionDenied / ErrArticleNotFound otherwise. requesterID is
+// accepted for signature parity with the other mutators (Pin/Update/Delete)
+// but unused for the gate.
+func (r *ArticleRepo) SetCommentsMode(ctx context.Context, articleID, requesterID int64, requesterRole Role, mode CommentsMode) error {
+	if !mode.Valid() {
+		return ErrInvalidCommentsMode
+	}
+	if !requesterRole.AtLeast(RoleMod) {
+		return ErrPermissionDenied
+	}
+	r.s.writeMu.Lock()
+	defer r.s.writeMu.Unlock()
+	var exists int64
+	err := r.s.db.QueryRowContext(ctx,
+		`SELECT id FROM articles WHERE id = ?`, articleID,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrArticleNotFound
+	}
+	if err != nil {
+		return err
+	}
+	_, err = r.s.db.ExecContext(ctx,
+		`UPDATE articles SET comments_mode = ? WHERE id = ?`, string(mode), articleID,
+	)
 	return err
 }

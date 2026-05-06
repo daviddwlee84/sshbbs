@@ -95,3 +95,14 @@ type ArticlePinChangedMsg struct {
 	ArticleID int64
 	Pinned    bool
 }
+
+// ArticleCommentsModeChangedMsg is broadcast when a mod changes an article's
+// comments_mode (open / arrows_only / locked). Article-view models filter
+// by ArticleID; board-view models filter by BoardID and re-fetch their list
+// so the [鎖]/[箭] badges stay current. Mode is the new CommentsMode string;
+// receivers should re-fetch from DB rather than trust the payload.
+type ArticleCommentsModeChangedMsg struct {
+	BoardID   int64
+	ArticleID int64
+	Mode      string // store.CommentsMode value, kept as string for tui-package isolation
+}
