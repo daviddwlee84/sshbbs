@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,29 @@ type Article struct {
 
 type ArticleRepo struct{ s *Store }
 
+// ArticleSort selects the secondary ordering inside ListByBoardOpts. Pinned
+// articles always float to the top regardless of sort — pin is an explicit
+// moderation signal stronger than score or recency.
+type ArticleSort int
+
+const (
+	SortNewestFirst ArticleSort = iota // default: created_at DESC, id DESC
+	SortByScoreDesc                    // recommend_score DESC, then created_at DESC, id DESC tiebreaker
+)
+
+// ListArticlesOpts parameterises ListByBoardOpts. Zero value behaves
+// identically to the legacy ListByBoard(boardID, 0): newest-first, no title
+// filter, default 50-row limit.
+type ListArticlesOpts struct {
+	Limit       int         // <=0 → 50
+	TitleSearch string      // empty → no filter; matched as LIKE '%q%' COLLATE NOCASE
+	Sort        ArticleSort
+}
+
+// likeEscape protects user input from being interpreted as LIKE wildcards.
+// Paired with `ESCAPE '\\'` in the SQL.
+var likeEscape = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 var (
 	ErrArticleNotFound     = errors.New("article not found")
 	ErrPermissionDenied    = errors.New("permission denied")
@@ -66,17 +90,53 @@ func scanArticle(row interface{ Scan(...any) error }) (*Article, error) {
 	return a, err
 }
 
+// ListByBoard returns the most-recent articles in a board, pinned first.
+// Thin shim over ListByBoardOpts kept so existing call sites and tests
+// (TestArticles_ListByBoard_NewestFirst, _Limit, _PinnedFirst) continue to
+// exercise the legacy default behaviour as a regression guard.
 func (r *ArticleRepo) ListByBoard(ctx context.Context, boardID int64, limit int) ([]*Article, error) {
+	return r.ListByBoardOpts(ctx, boardID, ListArticlesOpts{Limit: limit})
+}
+
+// ListByBoardOpts is the parameterised list endpoint that supports a
+// case-insensitive title substring filter and an alternate score-DESC sort.
+//
+// Pinned articles always surface first ((pinned_at IS NULL) sorts 0 before 1).
+// Within each pinned/non-pinned group the secondary ordering depends on
+// opts.Sort:
+//   - SortNewestFirst:  created_at DESC, id DESC
+//   - SortByScoreDesc:  recommend_score DESC, then created_at DESC, id DESC
+//
+// The created_at/id tiebreaker is essential in score mode because many fresh
+// posts share recommend_score=0 and need a deterministic secondary order.
+//
+// TODO(score-vs-pushcount): SortByScoreDesc orders by recommend_score (signed
+// sum: +1 push, -1 boo, 0 arrow). A future "raw 推文量" sort would need a
+// separate maintained push_count column.
+func (r *ArticleRepo) ListByBoardOpts(ctx context.Context, boardID int64, opts ListArticlesOpts) ([]*Article, error) {
+	limit := opts.Limit
 	if limit <= 0 {
 		limit = 50
 	}
-	// Pinned articles surface first ((pinned_at IS NULL) sorts 0 before 1);
-	// within each group, newest first by created_at then id (the latter
-	// disambiguates rows that share a second-resolution timestamp).
+
+	var (
+		where = "WHERE board_id = ?"
+		args  = []any{boardID}
+	)
+	if q := strings.TrimSpace(opts.TitleSearch); q != "" {
+		where += ` AND title LIKE ? ESCAPE '\' COLLATE NOCASE`
+		args = append(args, "%"+likeEscape.Replace(q)+"%")
+	}
+
+	orderBy := `ORDER BY (pinned_at IS NULL), created_at DESC, id DESC`
+	if opts.Sort == SortByScoreDesc {
+		orderBy = `ORDER BY (pinned_at IS NULL), recommend_score DESC, created_at DESC, id DESC`
+	}
+
+	args = append(args, limit)
 	rows, err := r.s.db.QueryContext(ctx,
-		`SELECT `+articleColumns+` FROM articles WHERE board_id = ?
-		 ORDER BY (pinned_at IS NULL), created_at DESC, id DESC LIMIT ?`,
-		boardID, limit,
+		`SELECT `+articleColumns+` FROM articles `+where+` `+orderBy+` LIMIT ?`,
+		args...,
 	)
 	if err != nil {
 		return nil, err

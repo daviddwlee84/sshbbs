@@ -176,3 +176,28 @@ func TestHelp_NonFormScreensAllHaveEntries(t *testing.T) {
 		}
 	}
 }
+
+// TestHelp_BoardListAndViewAdvertiseSearchSort guards the keymap entries
+// for the new / and s shortcuts. If someone removes a key from the
+// implementation, the inline help advertising it will stop matching the
+// real behaviour — this test catches that drift.
+func TestHelp_BoardListAndViewAdvertiseSearchSort(t *testing.T) {
+	requireKey(t, ScreenBoardList, "/")
+	requireKey(t, ScreenBoardView, "/")
+	requireKey(t, ScreenBoardView, "s")
+}
+
+// requireKey fails the test unless at least one HelpEntry on the given
+// screen begins with the wanted key (substring match — entries like
+// "/ search by title" still satisfy `requireKey(.., "/")`).
+func requireKey(t *testing.T, s Screen, key string) {
+	t.Helper()
+	for _, sec := range screenHelp[s] {
+		for _, e := range sec.Entries {
+			if strings.HasPrefix(e.Keys, key) {
+				return
+			}
+		}
+	}
+	t.Errorf("screen %v: no HelpEntry advertises key %q", s, key)
+}

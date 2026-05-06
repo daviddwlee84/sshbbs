@@ -627,7 +627,7 @@ func (m articleViewModel) View() string {
 		} else if m.canDeleteArticle() {
 			help += " · D 刪除文章"
 		}
-		help += " · Esc/← back · Ctrl+C disconnect"
+		help += " · ? help · Esc/← back · Ctrl+C disconnect"
 		if m.err != "" {
 			b.WriteString("\n  " + StyleError.Render("⚠ "+m.err))
 		}

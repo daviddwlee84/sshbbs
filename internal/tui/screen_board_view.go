@@ -5,19 +5,24 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
 type boardViewModel struct {
-	deps     Deps
-	board    *store.Board
-	articles []*store.Article
-	cursor   int
-	width    int
-	height   int
-	loadErr  error
+	deps         Deps
+	board        *store.Board
+	articles     []*store.Article
+	cursor       int
+	width        int
+	height       int
+	loadErr      error
+	search       textinput.Model   // input for the active search term
+	searchActive bool              // true while focused & accepting keys
+	filter       string            // confirmed title substring; "" = no filter
+	sort         store.ArticleSort // SortNewestFirst (default) or SortByScoreDesc
 }
 
 func newBoardViewModel(deps Deps, boardID int64) boardViewModel {
@@ -26,62 +31,139 @@ func newBoardViewModel(deps Deps, boardID int64) boardViewModel {
 	if err != nil {
 		return boardViewModel{deps: deps, loadErr: err}
 	}
-	articles, err := deps.Store.Articles().ListByBoard(ctx, boardID, 100)
-	return boardViewModel{deps: deps, board: board, articles: articles, loadErr: err}
+	ti := textinput.New()
+	ti.Placeholder = "搜尋標題 / search title"
+	ti.CharLimit = 64
+	ti.Width = 50
+	m := boardViewModel{deps: deps, board: board, search: ti}
+	return m.reload(0)
 }
 
 func (m boardViewModel) Init() tea.Cmd { return nil }
+
+// reload re-fetches articles using the current m.filter and m.sort and
+// returns the updated model. anchorID > 0 keeps the cursor on the same
+// article ID across the reflow; anchorID == 0 leaves the cursor at its
+// numeric index (clamped to the new length). DB errors after the initial
+// load are silent so a transient broadcast-driven refresh doesn't blank
+// the screen — matches the pre-refactor behaviour of the inline reloads.
+func (m boardViewModel) reload(anchorID int64) boardViewModel {
+	if m.board == nil {
+		return m
+	}
+	ctx := context.Background()
+	arts, err := m.deps.Store.Articles().ListByBoardOpts(ctx, m.board.ID,
+		store.ListArticlesOpts{Limit: 100, TitleSearch: m.filter, Sort: m.sort})
+	if err != nil {
+		if m.loadErr == nil {
+			m.loadErr = err
+		}
+		return m
+	}
+	m.articles = arts
+	if anchorID > 0 {
+		m.cursor = findCursorByID(arts, anchorID)
+	}
+	if m.cursor >= len(arts) {
+		m.cursor = max(0, len(arts)-1)
+	}
+	return m
+}
+
+// currentAnchorID returns the cursored article's ID, or 0 if the list is
+// empty. Used to preserve the highlight across reloads triggered by sort
+// toggles or pin/mode broadcasts.
+func (m boardViewModel) currentAnchorID() int64 {
+	if m.cursor < len(m.articles) {
+		return m.articles[m.cursor].ID
+	}
+	return 0
+}
 
 func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.search.Width = max(20, msg.Width-12)
 		return m, nil
 	case ArticleAddedMsg:
 		if m.board != nil && msg.BoardID == m.board.ID {
-			ctx := context.Background()
-			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
-				m.articles = arts
-			}
+			// No anchor — preserve cursor index. Matches pre-refactor
+			// behaviour: a freshly added article shifts the cursor to
+			// what was previously one row below it (in newest-first sort).
+			m = m.reload(0)
 		}
 		return m, nil
 	case ArticlePinChangedMsg:
 		if m.board != nil && msg.BoardID == m.board.ID {
-			// Pin re-orders the list. Re-anchor the cursor by article ID so
-			// the same article stays highlighted across the reflow.
-			anchorID := int64(0)
-			if m.cursor < len(m.articles) {
-				anchorID = m.articles[m.cursor].ID
-			}
-			ctx := context.Background()
-			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
-				m.articles = arts
-				m.cursor = findCursorByID(arts, anchorID)
-			}
+			// Pin re-orders the list — re-anchor the cursor by article ID
+			// so the same article stays highlighted across the reflow.
+			m = m.reload(m.currentAnchorID())
 		}
 		return m, nil
 	case ArticleCommentsModeChangedMsg:
 		if m.board != nil && msg.BoardID == m.board.ID {
-			// Mode flip doesn't reorder, but we still re-anchor the cursor
-			// for parity with the pin handler — if a future change adds
-			// list ordering by comments_mode, we won't lose the highlight.
-			anchorID := int64(0)
-			if m.cursor < len(m.articles) {
-				anchorID = m.articles[m.cursor].ID
-			}
-			ctx := context.Background()
-			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
-				m.articles = arts
-				m.cursor = findCursorByID(arts, anchorID)
-			}
+			m = m.reload(m.currentAnchorID())
 		}
 		return m, nil
 	case tea.KeyMsg:
+		// While the search input is focused every printable key types into
+		// it; only enter (confirm), esc (cancel), and ctrl+c (handled at
+		// Root) escape that. Action keys (s/M/p/b/B/Q) and vim navigation
+		// (h/j/k/l/g/G/[/]) all become text characters during search.
+		if m.searchActive {
+			switch msg.String() {
+			case "enter":
+				m.filter = strings.TrimSpace(m.search.Value())
+				m.searchActive = false
+				m.search.Blur()
+				m.cursor = 0
+				m = m.reload(0)
+				return m, nil
+			case "esc":
+				m.search.SetValue("")
+				m.filter = ""
+				m.searchActive = false
+				m.search.Blur()
+				m.cursor = 0
+				m = m.reload(0)
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.search, cmd = m.search.Update(msg)
+			return m, cmd
+		}
+
 		switch msg.String() {
-		case "esc", "backspace", "left", "h":
+		case "/":
+			m.searchActive = true
+			m.search.SetValue(m.filter)
+			m.search.CursorEnd()
+			m.search.Focus()
+			return m, textinput.Blink
+		case "esc":
+			if m.filter != "" {
+				m.filter = ""
+				m.search.SetValue("")
+				m.cursor = 0
+				m = m.reload(0)
+				return m, nil
+			}
+			return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardList} }
+		case "backspace", "left", "h":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenBoardList} }
 		case "Q":
 			return m, func() tea.Msg { return NavigateMsg{To: ScreenMainMenu} }
+		case "s":
+			// Cycle sort. Anchor on the cursored article so the highlight
+			// follows the row across the reorder. NOTE(score-vs-pushcount):
+			// the user-facing label says 推文量 (push amount); under the hood
+			// we sort by recommend_score (signed +1/-1/0 sum). Acceptable
+			// proxy for now; if the product distinction matters later, add
+			// a maintained push_count column.
+			m.sort = (m.sort + 1) % 2
+			m = m.reload(m.currentAnchorID())
+			return m, nil
 		case "up", "k", "[":
 			if m.cursor > 0 {
 				m.cursor--
@@ -133,16 +215,13 @@ func (m boardViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			a := m.articles[m.cursor]
-			pinned := !a.PinnedAt.Valid // toggle
+			pinned := !a.PinnedAt.Valid
 			ctx := context.Background()
 			u := m.deps.User
 			if err := m.deps.Store.Articles().SetPinned(ctx, a.ID, u.ID, u.Role, pinned); err != nil {
 				return m, nil
 			}
-			if arts, err := m.deps.Store.Articles().ListByBoard(ctx, m.board.ID, 100); err == nil {
-				m.articles = arts
-				m.cursor = findCursorByID(arts, a.ID)
-			}
+			m = m.reload(a.ID)
 			if m.deps.Broker != nil {
 				m.deps.Broker.SendToAll(u.ID, ArticlePinChangedMsg{
 					BoardID: m.board.ID, ArticleID: a.ID, Pinned: pinned,
@@ -169,12 +248,26 @@ func (m boardViewModel) View() string {
 		b.WriteString("  " + StyleError.Render("⚠ "+m.loadErr.Error()) + "\n")
 		return b.String()
 	}
+
+	// Search row + sort indicator. Search runs above the article table so the
+	// table's row layout stays predictable across show/hide.
+	switch {
+	case m.searchActive:
+		b.WriteString("  " + StyleDim.Render("搜尋 / 標題: ") + m.search.View() + "\n")
+		b.WriteString("  " + StyleDim.Render("(Enter 套用 · Esc 取消)") + "\n\n")
+	case m.filter != "":
+		b.WriteString("  " + StyleDim.Render(fmt.Sprintf("[搜尋: %s · %d 筆 · / 修改 · Esc 清除]", m.filter, len(m.articles))) + "\n\n")
+	}
+
 	if len(m.articles) == 0 {
 		hint := "(no articles yet — press p to write one)"
-		help := "p post · Esc/←/h back · Ctrl+C disconnect"
+		help := "p post · / search · ? help · Esc/←/h back · Ctrl+C disconnect"
+		if m.filter != "" {
+			hint = "(沒有符合的文章)"
+		}
 		if m.isGuest() {
 			hint = "(no articles yet)"
-			help = "Esc/←/h back · Ctrl+C disconnect"
+			help = "/ search · ? help · Esc/←/h back · Ctrl+C disconnect"
 		}
 		help = m.appendBannerHelp(help)
 		b.WriteString("  " + StyleDim.Render(hint) + "\n")
@@ -196,7 +289,11 @@ func (m boardViewModel) View() string {
 		PadRight("Author", authorW),
 		PadRight("Title", titleW),
 	)
-	b.WriteString(StyleDim.Render(header) + "\n")
+	b.WriteString(StyleDim.Render(header))
+	if m.sort == store.SortByScoreDesc {
+		b.WriteString("  " + StyleDim.Render("[排序: 推文量↓]"))
+	}
+	b.WriteString("\n")
 
 	for i, a := range m.articles {
 		score := ""
@@ -241,9 +338,9 @@ func (m boardViewModel) View() string {
 		}
 	}
 
-	help := "↑/↓ j/k move · Enter/→/l open · p post · Esc/←/h back · Ctrl+C disconnect"
+	help := "↑/↓ j/k move · Enter/→/l open · p post · / search · s sort · ? help · Esc/←/h back · Ctrl+C disconnect"
 	if m.isGuest() {
-		help = "↑/↓ j/k move · Enter/→/l open · Esc/←/h back · Ctrl+C disconnect"
+		help = "↑/↓ j/k move · Enter/→/l open · / search · s sort · ? help · Esc/←/h back · Ctrl+C disconnect"
 	}
 	help = m.appendBannerHelp(help)
 	b.WriteString("\n  " + StyleHelp.Render(help))

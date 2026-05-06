@@ -45,6 +45,8 @@ var screenHelp = map[Screen][]helpSection{
 		Entries: []HelpEntry{
 			{"↑/↓ j/k [/]", "move cursor"},
 			{"Enter/→/l", "open board"},
+			{"/", "search boards (Enter applies, Esc cancels)"},
+			{"Esc (filtered)", "clear active filter"},
 			{"Esc/←/h", "back"},
 		},
 	}},
@@ -53,6 +55,9 @@ var screenHelp = map[Screen][]helpSection{
 		Entries: []HelpEntry{
 			{"↑/↓ j/k [/]", "move cursor"},
 			{"Enter/→/l", "open article"},
+			{"/", "search articles by title"},
+			{"s", "toggle sort (Newest ↔ 推文量)"},
+			{"Esc (filtered)", "clear active filter"},
 			{"p", "post new article (non-guest)"},
 			{"b", "board banner splash (if banner set)"},
 			{"B", "edit banner (mod+)"},

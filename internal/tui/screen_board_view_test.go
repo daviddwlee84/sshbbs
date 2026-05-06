@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -460,5 +461,326 @@ func TestBoardView_RenderBanner_LongBannerTruncated(t *testing.T) {
 	// Must contain the overflow hint.
 	if !strings.Contains(got, "truncated") {
 		t.Errorf("expected truncation hint; got:\n%s", got)
+	}
+}
+
+// updateBV runs Update on a boardViewModel and returns the typed model so
+// tests can chain key presses without re-asserting the type each time.
+func updateBV(m boardViewModel, key string) boardViewModel {
+	model, _ := m.Update(keyOf(key))
+	return model.(boardViewModel)
+}
+
+func typeBVQuery(m boardViewModel, query string) boardViewModel {
+	for _, r := range query {
+		m = updateBV(m, string(r))
+	}
+	return m
+}
+
+// pushArticleN registers n fresh helper users and has each push the given
+// article once with the given kind. Each push contributes |delta| to the
+// cached recommend_score, which is what SortByScoreDesc orders on.
+func pushArticleN(t *testing.T, st *store.Store, articleID int64, kind store.PushKind, n int) {
+	t.Helper()
+	ctx := context.Background()
+	for i := range n {
+		nick := fmt.Sprintf("bv_p%d_%s_%d", articleID, kind, i)
+		pusher := storetest.MustUser(t, st, nick, "")
+		if _, err := st.Pushes().Create(ctx, articleID, pusher.ID, pusher.UserID, kind, "."); err != nil {
+			t.Fatalf("push %d on article %d: %v", i, articleID, err)
+		}
+	}
+}
+
+func TestBoardView_SlashEntersSearchMode(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	m = updateBV(m, "/")
+	if !m.searchActive {
+		t.Fatalf("after /: searchActive = false, want true")
+	}
+	if !m.search.Focused() {
+		t.Errorf("textinput must be focused while searching")
+	}
+}
+
+// While searchActive every action key must type into the input rather than
+// trigger its normal behaviour. Mirrors the form-screen rule.
+func TestBoardView_SearchSuspendsActionKeys(t *testing.T) {
+	for _, key := range []string{"s", "M", "p", "b", "B", "h", "l", "j", "k"} {
+		t.Run(key, func(t *testing.T) {
+			m, _, _ := newBoardViewFixture(t)
+			m = updateBV(m, "/")
+			beforeCursor := m.cursor
+			beforeSort := m.sort
+			m = updateBV(m, key)
+			if !m.searchActive {
+				t.Fatalf("key %q exited search mode unexpectedly", key)
+			}
+			if m.cursor != beforeCursor {
+				t.Errorf("key %q moved cursor (%d → %d)", key, beforeCursor, m.cursor)
+			}
+			if m.sort != beforeSort {
+				t.Errorf("key %q changed sort (%v → %v)", key, beforeSort, m.sort)
+			}
+			if m.search.Value() != key {
+				t.Errorf("textinput value = %q, want %q (key did not type)", m.search.Value(), key)
+			}
+		})
+	}
+}
+
+func TestBoardView_FilterByTitle(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	// Fixture seeds three titles: first, second, third.
+	m = updateBV(m, "/")
+	m = typeBVQuery(m, "irst") // matches "first" only
+	m = updateBV(m, "enter")
+
+	if m.filter != "irst" {
+		t.Errorf("filter = %q, want irst", m.filter)
+	}
+	if len(m.articles) != 1 || m.articles[0].Title != "first" {
+		got := make([]string, len(m.articles))
+		for i, a := range m.articles {
+			got[i] = a.Title
+		}
+		t.Errorf("filtered articles = %v, want [first]", got)
+	}
+}
+
+func TestBoardView_EscFromConfirmedClearsFilter(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	m = updateBV(m, "/")
+	m = typeBVQuery(m, "irst")
+	m = updateBV(m, "enter")
+	if len(m.articles) != 1 {
+		t.Fatalf("precondition: filtered len=%d, want 1", len(m.articles))
+	}
+
+	model, cmd := m.Update(keyOf("esc"))
+	m = model.(boardViewModel)
+	if cmd != nil {
+		if msg, ok := runCmd(cmd).(NavigateMsg); ok {
+			t.Errorf("esc on filtered board returned NavigateMsg(%v); should clear filter only", msg)
+		}
+	}
+	if m.filter != "" {
+		t.Errorf("filter = %q, want empty", m.filter)
+	}
+	if len(m.articles) != 3 {
+		t.Errorf("len(articles) = %d, want 3 (full list restored)", len(m.articles))
+	}
+}
+
+// Three articles, distinct scores 5/3/-1. Press s and the list reorders
+// hottest-first. Press s again and it returns to newest-first.
+func TestBoardView_SortToggle_ByScoreThenBack(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	st := m.deps.Store
+	// Note: fixture order in arts is creation order [first, second, third];
+	// newest-first the visible order is third, second, first.
+	pushArticleN(t, st, arts[0].ID, store.PushKindPush, 5)  // first → +5
+	pushArticleN(t, st, arts[1].ID, store.PushKindPush, 3)  // second → +3
+	pushArticleN(t, st, arts[2].ID, store.PushKindBoo, 1)   // third → -1
+
+	// First press: enter score sort. Expected order first(5), second(3), third(-1).
+	m = updateBV(m, "s")
+	if m.sort != store.SortByScoreDesc {
+		t.Fatalf("after s: sort = %v, want SortByScoreDesc", m.sort)
+	}
+	wantTitles := []string{"first", "second", "third"}
+	if len(m.articles) != 3 {
+		t.Fatalf("after s: %d articles, want 3", len(m.articles))
+	}
+	for i, w := range wantTitles {
+		if m.articles[i].Title != w {
+			gotTitles := make([]string, len(m.articles))
+			for j, a := range m.articles {
+				gotTitles[j] = a.Title
+			}
+			t.Errorf("score-sort [%d] = %q, want %q (full: %v)", i, m.articles[i].Title, w, gotTitles)
+			break
+		}
+	}
+
+	// Second press: back to newest-first. Expected order third, second, first.
+	m = updateBV(m, "s")
+	if m.sort != store.SortNewestFirst {
+		t.Fatalf("after second s: sort = %v, want SortNewestFirst", m.sort)
+	}
+	wantNewest := []string{"third", "second", "first"}
+	for i, w := range wantNewest {
+		if m.articles[i].Title != w {
+			t.Errorf("newest-sort [%d] = %q, want %q", i, m.articles[i].Title, w)
+			break
+		}
+	}
+}
+
+// Sort key while searchActive must NOT cycle the sort — covered by the
+// table test above, but assert the post-confirm state explicitly so a
+// regression in the gate is caught precisely.
+func TestBoardView_SortNotTriggeredDuringSearch(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	m = updateBV(m, "/")
+	if m.sort != store.SortNewestFirst {
+		t.Fatalf("precondition: sort=%v, want SortNewestFirst", m.sort)
+	}
+	m = updateBV(m, "s")
+	if m.sort != store.SortNewestFirst {
+		t.Errorf("s during search changed sort to %v", m.sort)
+	}
+	if m.search.Value() != "s" {
+		t.Errorf("textinput value = %q, want %q", m.search.Value(), "s")
+	}
+}
+
+// A pinned article must precede higher-scored unpinned articles even in
+// score sort — pin is an explicit moderation override.
+func TestBoardView_SortPinnedStillFirst(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	st := m.deps.Store
+	// Make "first" hot (score 10); pin "third" (newest, score 0).
+	pushArticleN(t, st, arts[0].ID, store.PushKindPush, 10)
+	m.deps.User.Role = store.RoleMod
+	if err := st.Articles().SetPinned(context.Background(),
+		arts[2].ID, m.deps.User.ID, store.RoleMod, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+
+	m = updateBV(m, "s")
+	if len(m.articles) != 3 || m.articles[0].Title != "third" {
+		gotTitles := make([]string, len(m.articles))
+		for i, a := range m.articles {
+			gotTitles[i] = a.Title
+		}
+		t.Errorf("score sort with pin: got %v, want [third, ...] (pinned leads)", gotTitles)
+	}
+}
+
+// Sort selection must survive an ArticleAddedMsg broadcast — the new
+// article should slot into the score-ordered list, not reset the sort.
+func TestBoardView_SortPersistsAcrossArticleAddedMsg(t *testing.T) {
+	m, board, arts := newBoardViewFixture(t)
+	st := m.deps.Store
+	pushArticleN(t, st, arts[0].ID, store.PushKindPush, 5) // first → 5
+
+	m = updateBV(m, "s")
+	if m.sort != store.SortByScoreDesc {
+		t.Fatalf("precondition: sort=%v", m.sort)
+	}
+
+	// Inject a new article with score 0.
+	user := m.deps.User
+	a4, err := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "fourth", "")
+	if err != nil {
+		t.Fatalf("create fourth: %v", err)
+	}
+	model, _ := m.Update(ArticleAddedMsg{
+		BoardID: board.ID, ArticleID: a4.ID, AuthorUserID: user.UserID, Title: "fourth",
+	})
+	m = model.(boardViewModel)
+
+	if m.sort != store.SortByScoreDesc {
+		t.Errorf("sort flipped to %v after ArticleAddedMsg", m.sort)
+	}
+	if len(m.articles) != 4 || m.articles[0].Title != "first" {
+		gotTitles := make([]string, len(m.articles))
+		for i, a := range m.articles {
+			gotTitles[i] = a.Title
+		}
+		t.Errorf("score order after add: %v, want [first, …] (first still has score 5)", gotTitles)
+	}
+}
+
+// Combined filter + sort: only articles matching the title query, ordered
+// by score within that subset, with pinned-first preserved.
+func TestBoardView_FilterAndSortCombined(t *testing.T) {
+	m, board, _ := newBoardViewFixture(t)
+	st := m.deps.Store
+
+	// Add two more articles whose titles share "match" so we have a
+	// non-trivial filtered subset.
+	user := m.deps.User
+	hot, _ := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "hot match", "")
+	cold, _ := st.Articles().Create(context.Background(), board.ID, user.ID, user.UserID, "cold match", "")
+	pushArticleN(t, st, hot.ID, store.PushKindPush, 7)
+	pushArticleN(t, st, cold.ID, store.PushKindBoo, 2)
+
+	// Reload model so the new articles are visible. The fixture's
+	// constructor ran before Create, so we re-build to pick up the new rows.
+	m = newBoardViewModel(m.deps, board.ID)
+
+	m = updateBV(m, "/")
+	m = typeBVQuery(m, "match")
+	m = updateBV(m, "enter")
+	m = updateBV(m, "s") // toggle to score sort
+
+	if len(m.articles) != 2 {
+		gotTitles := make([]string, len(m.articles))
+		for i, a := range m.articles {
+			gotTitles[i] = a.Title
+		}
+		t.Fatalf("filtered+sorted len = %d, want 2 (got: %v)", len(m.articles), gotTitles)
+	}
+	if m.articles[0].Title != "hot match" || m.articles[1].Title != "cold match" {
+		t.Errorf("[%q, %q], want [hot match, cold match]", m.articles[0].Title, m.articles[1].Title)
+	}
+}
+
+// Cursor anchor: filter narrows the list but the previously-selected
+// article is still in the result — the highlight should follow it rather
+// than reset to 0.
+func TestBoardView_FilterCursorReanchorsByID(t *testing.T) {
+	m, _, arts := newBoardViewFixture(t)
+	// Move cursor to "first" (the oldest, at the bottom of newest-first).
+	m = updateBV(m, "G")
+	if m.articles[m.cursor].ID != arts[0].ID {
+		t.Fatalf("precondition: cursor on arts[0]=%d, got cursor=%d on id=%d",
+			arts[0].ID, m.cursor, m.articles[m.cursor].ID)
+	}
+
+	// Filter to "irst" — only "first" matches. After confirm, cursor=0
+	// (the test guarantees the user lands on the single match without
+	// stale-index dangling-pointer behaviour).
+	m = updateBV(m, "/")
+	m = typeBVQuery(m, "irst")
+	m = updateBV(m, "enter")
+
+	if len(m.articles) != 1 {
+		t.Fatalf("filtered len = %d, want 1", len(m.articles))
+	}
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (only one row)", m.cursor)
+	}
+	if m.articles[0].ID != arts[0].ID {
+		t.Errorf("filtered[0].ID = %d, want %d (first)", m.articles[0].ID, arts[0].ID)
+	}
+}
+
+// View must surface the search indicator and the sort-mode tag so users
+// always see what state they're in.
+func TestBoardView_ViewShowsSearchAndSortIndicators(t *testing.T) {
+	m, _, _ := newBoardViewFixture(t)
+	m.width = 80
+
+	// While searchActive: 搜尋 prompt visible.
+	m1 := updateBV(m, "/")
+	if !strings.Contains(m1.View(), "搜尋") {
+		t.Errorf("active-search view missing 搜尋 prompt")
+	}
+
+	// After confirming a filter: indicator with query.
+	m2 := typeBVQuery(m1, "first")
+	m2 = updateBV(m2, "enter")
+	if !strings.Contains(m2.View(), "搜尋: first") {
+		t.Errorf("confirmed-filter view missing search indicator")
+	}
+
+	// After s: sort indicator.
+	m3 := updateBV(m, "s")
+	if !strings.Contains(m3.View(), "推文量") {
+		t.Errorf("score-sort view missing 推文量 indicator")
 	}
 }

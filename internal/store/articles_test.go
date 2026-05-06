@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -570,5 +571,212 @@ func TestArticles_BoardIsolation(t *testing.T) {
 	gotCC, _ := st.Articles().ListByBoard(ctx, chitChat.ID, 0)
 	if len(gotCC) != 1 || gotCC[0].Title != "in chitchat" {
 		t.Errorf("ChitChat board: got %+v, want one article 'in chitchat'", gotCC)
+	}
+}
+
+func TestArticles_ListByBoardOpts_TitleSearch(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	titles := []string{"First post", "Second post", "Third entry", "First update"}
+	for _, ti := range titles {
+		if _, err := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, ti, ""); err != nil {
+			t.Fatalf("create %q: %v", ti, err)
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	got, err := st.Articles().ListByBoardOpts(ctx, board.ID, store.ListArticlesOpts{TitleSearch: "first"})
+	if err != nil {
+		t.Fatalf("ListByBoardOpts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d hits, want 2 (got: %v)", len(got), titlesOf(got))
+	}
+	// Newest-first: "First update" was created last among the two matches.
+	want := []string{"First update", "First post"}
+	for i, w := range want {
+		if got[i].Title != w {
+			t.Errorf("[%d] = %q, want %q", i, got[i].Title, w)
+		}
+	}
+
+	// Whitespace-only query is ignored (returns full list).
+	got, _ = st.Articles().ListByBoardOpts(ctx, board.ID, store.ListArticlesOpts{TitleSearch: "   "})
+	if len(got) != 4 {
+		t.Errorf("whitespace query: got %d, want 4", len(got))
+	}
+}
+
+func TestArticles_ListByBoardOpts_TitleSearch_EscapesLikeWildcards(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	for _, ti := range []string{"50% off", "5 things", "no match here"} {
+		if _, err := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, ti, ""); err != nil {
+			t.Fatalf("create %q: %v", ti, err)
+		}
+	}
+
+	// "50%" must match only the literal "50% off" — without escaping the
+	// percent would behave as a wildcard and also match "5 things".
+	got, _ := st.Articles().ListByBoardOpts(ctx, board.ID, store.ListArticlesOpts{TitleSearch: "50%"})
+	if len(got) != 1 || got[0].Title != "50% off" {
+		t.Errorf("escaped %% search: got %v, want exactly [50%% off]", titlesOf(got))
+	}
+
+	// Bare "5" is a substring of both 50% off and 5 things.
+	got, _ = st.Articles().ListByBoardOpts(ctx, board.ID, store.ListArticlesOpts{TitleSearch: "5"})
+	if len(got) != 2 {
+		t.Errorf("bare 5 search: got %d, want 2 (titles: %v)", len(got), titlesOf(got))
+	}
+
+	// Underscore must also be escaped — title "no match here" doesn't contain
+	// the literal "_", so a "_" query should match nothing rather than acting
+	// as a single-character wildcard.
+	got, _ = st.Articles().ListByBoardOpts(ctx, board.ID, store.ListArticlesOpts{TitleSearch: "_"})
+	if len(got) != 0 {
+		t.Errorf("escaped _ search: got %d, want 0 (titles: %v)", len(got), titlesOf(got))
+	}
+}
+
+func TestArticles_ListByBoardOpts_TitleSearch_BoardIsolation(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	test := storetest.MustBoard(t, st, "Test")
+	chitChat := storetest.MustBoard(t, st, "ChitChat")
+
+	_, _ = st.Articles().Create(ctx, test.ID, user.ID, user.UserID, "shared keyword", "")
+	_, _ = st.Articles().Create(ctx, chitChat.ID, user.ID, user.UserID, "shared keyword", "")
+
+	got, _ := st.Articles().ListByBoardOpts(ctx, test.ID,
+		store.ListArticlesOpts{TitleSearch: "shared"})
+	if len(got) != 1 {
+		t.Errorf("got %d, want 1 (filter must scope to boardID)", len(got))
+	}
+	if len(got) > 0 && got[0].BoardID != test.ID {
+		t.Errorf("BoardID = %d, want %d", got[0].BoardID, test.ID)
+	}
+}
+
+func TestArticles_ListByBoardOpts_TitleSearch_CaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	_, _ = st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "MixedCase Title", "")
+
+	got, _ := st.Articles().ListByBoardOpts(ctx, board.ID,
+		store.ListArticlesOpts{TitleSearch: "mixedcase"})
+	if len(got) != 1 {
+		t.Errorf("lowercase query: got %d, want 1", len(got))
+	}
+	got, _ = st.Articles().ListByBoardOpts(ctx, board.ID,
+		store.ListArticlesOpts{TitleSearch: "MIXEDCASE"})
+	if len(got) != 1 {
+		t.Errorf("uppercase query: got %d, want 1", len(got))
+	}
+}
+
+func TestArticles_ListByBoardOpts_SortByScore(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	hot, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "hot", "")
+	cold, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "cold", "")
+	mid, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "mid", "")
+
+	// Build distinct scores via real Pushes() so the cached recommend_score
+	// is exercised end-to-end (mirrors how the production code drives it).
+	mustPush(t, st, hot.ID, store.PushKindPush, 5)
+	mustPush(t, st, mid.ID, store.PushKindPush, 3)
+	mustPush(t, st, cold.ID, store.PushKindBoo, 1)
+
+	got, err := st.Articles().ListByBoardOpts(ctx, board.ID,
+		store.ListArticlesOpts{Sort: store.SortByScoreDesc})
+	if err != nil {
+		t.Fatalf("ListByBoardOpts: %v", err)
+	}
+	wantOrder := []string{"hot", "mid", "cold"}
+	if len(got) != 3 {
+		t.Fatalf("got %d, want 3", len(got))
+	}
+	for i, w := range wantOrder {
+		if got[i].Title != w {
+			t.Errorf("[%d] = %q (score %d), want %q", i, got[i].Title, got[i].RecommendScore, w)
+		}
+	}
+}
+
+func TestArticles_ListByBoardOpts_SortByScore_PinnedStillFirst(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	mod := storetest.MustUser(t, st, "mod", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	pinned, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "pinned-rules", "")
+	unpinned, _ := st.Articles().Create(ctx, board.ID, mod.ID, mod.UserID, "unpinned-hot", "")
+
+	// Pinned article gets score 0; unpinned gets a much higher score. Pin
+	// should still float to top — pin is an explicit moderation override.
+	mustPush(t, st, unpinned.ID, store.PushKindPush, 10)
+	if err := st.Articles().SetPinned(ctx, pinned.ID, mod.ID, store.RoleMod, true); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+
+	got, _ := st.Articles().ListByBoardOpts(ctx, board.ID,
+		store.ListArticlesOpts{Sort: store.SortByScoreDesc})
+	if len(got) != 2 || got[0].Title != "pinned-rules" {
+		t.Errorf("pinned must lead in score sort: got %v", titlesOf(got))
+	}
+}
+
+func TestArticles_ListByBoardOpts_TitleSearchAndSort_Combined(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.New(t)
+	user := storetest.MustUser(t, st, "alice", "")
+	board := storetest.MustBoard(t, st, "Test")
+
+	hotMatch, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "hot match", "")
+	coldMatch, _ := st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "cold match", "")
+	_, _ = st.Articles().Create(ctx, board.ID, user.ID, user.UserID, "no keyword", "")
+
+	mustPush(t, st, hotMatch.ID, store.PushKindPush, 7)
+	mustPush(t, st, coldMatch.ID, store.PushKindBoo, 2)
+
+	got, _ := st.Articles().ListByBoardOpts(ctx, board.ID, store.ListArticlesOpts{
+		TitleSearch: "match",
+		Sort:        store.SortByScoreDesc,
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d, want 2 (titles: %v)", len(got), titlesOf(got))
+	}
+	if got[0].Title != "hot match" || got[1].Title != "cold match" {
+		t.Errorf("combined order: %v, want [hot match, cold match]", titlesOf(got))
+	}
+}
+
+// mustPush stacks n pushes of `kind` against articleID, each from a freshly
+// registered helper user so the cached recommend_score reflects |delta| × n.
+// Multiple invocations within one test must not collide on user_id — articleID
+// is part of the helper's nickname seed so each (article, kind, index) tuple
+// is globally unique.
+func mustPush(t *testing.T, st *store.Store, articleID int64, kind store.PushKind, n int) {
+	t.Helper()
+	ctx := context.Background()
+	for i := range n {
+		nick := fmt.Sprintf("p%d_%s_%d", articleID, kind, i)
+		pusher := storetest.MustUser(t, st, nick, "")
+		if _, err := st.Pushes().Create(ctx, articleID, pusher.ID, pusher.UserID, kind, "."); err != nil {
+			t.Fatalf("push %d on article %d: %v", i, articleID, err)
+		}
 	}
 }
