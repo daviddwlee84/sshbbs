@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -124,6 +125,16 @@ func Register(ctx context.Context, st *store.Store, userID, password, nickname, 
 		}
 		return nil, err
 	}
+	// New accounts inherit the server's default locale so a non-Chinese
+	// operator running with -locale=en (or BBS_LOCALE=en) doesn't have to
+	// tell every fresh signup to flip the setting manually. zh-TW
+	// operators get the same outcome as the migration's column DEFAULT;
+	// the extra UPDATE is cheap and keeps the policy in code rather
+	// than split between SQL and Go.
+	if err := st.Users().SetLocale(ctx, u.ID, string(i18n.Default)); err != nil {
+		return nil, err
+	}
+	u.Locale = string(i18n.Default)
 	return u, nil
 }
 

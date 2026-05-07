@@ -26,11 +26,28 @@ type Locale string
 const (
 	LocaleZHTW Locale = "zh-TW"
 	LocaleEN   Locale = "en"
-
-	// Default is the fallback locale. Empty/unrecognised values from the
-	// DB resolve here, and the en table falls back here for missing keys.
-	Default Locale = LocaleZHTW
 )
+
+// Default is the fallback locale used when:
+//   - a User is nil (register / pre-login screens)
+//   - users.locale stores an unrecognised value (forward compatibility)
+//   - a key is missing in another locale's table (fallback chain)
+//
+// It defaults to zh-TW (the project's canonical locale) but operators
+// can flip it to en at server startup via SetDefault — typically driven
+// by the -locale flag or BBS_LOCALE env var in cmd/sshbbs/main.go. Set
+// once before any sessions accept traffic; treated as read-only after
+// that, so no mutex is needed.
+var Default Locale = LocaleZHTW
+
+// SetDefault overrides Default if loc is a recognised locale; ignores
+// unknowns (rather than panicking) so a typo in BBS_LOCALE on a
+// production deploy doesn't crash startup.
+func SetDefault(loc Locale) {
+	if Valid(string(loc)) {
+		Default = loc
+	}
+}
 
 // Valid reports whether s names a recognised locale. The locale-settings
 // screen calls this before persisting; everywhere else uses Normalize.

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/store"
 )
 
@@ -37,6 +38,37 @@ func TestRegister_Success(t *testing.T) {
 	}
 	if u.PasswordHash == "pw123456" {
 		t.Error("PasswordHash stored in plaintext")
+	}
+	// New accounts inherit the server-wide default locale (default
+	// zh-TW). The flag/env override is exercised by
+	// TestRegister_InheritsServerDefaultLocale below.
+	if u.Locale != string(i18n.Default) {
+		t.Errorf("Locale = %q, want %q (server default)", u.Locale, i18n.Default)
+	}
+}
+
+// TestRegister_InheritsServerDefaultLocale guards the BBS_LOCALE / -locale
+// startup flag end-to-end: when an operator flips the server default to
+// en, a freshly registered account is en immediately — no per-user fix-up
+// required. Pinning Default in this test isolates the behaviour from
+// other tests that may run with the canonical zh-TW.
+func TestRegister_InheritsServerDefaultLocale(t *testing.T) {
+	orig := i18n.Default
+	t.Cleanup(func() { i18n.Default = orig })
+	i18n.SetDefault(i18n.LocaleEN)
+
+	st := newStore(t)
+	ctx := context.Background()
+	u, err := auth.Register(ctx, st, "alice", "pw123456", "alice", "")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if u.Locale != "en" {
+		t.Errorf("in-memory Locale = %q, want en", u.Locale)
+	}
+	fresh, _ := st.Users().GetByID(ctx, u.ID)
+	if fresh.Locale != "en" {
+		t.Errorf("DB Locale = %q, want en", fresh.Locale)
 	}
 }
 

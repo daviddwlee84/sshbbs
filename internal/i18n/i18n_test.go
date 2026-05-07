@@ -5,6 +5,33 @@ import (
 	"testing"
 )
 
+// TestSetDefault validates that SetDefault accepts known locales and
+// silently ignores unknowns (forward-compat: a typo in BBS_LOCALE on
+// production must not crash startup). The test restores Default after
+// each mutation so it doesn't leak into other tests in this file.
+func TestSetDefault(t *testing.T) {
+	orig := Default
+	t.Cleanup(func() { Default = orig })
+
+	SetDefault(LocaleEN)
+	if Default != LocaleEN {
+		t.Errorf("SetDefault(en): Default = %q, want en", Default)
+	}
+	SetDefault(LocaleZHTW)
+	if Default != LocaleZHTW {
+		t.Errorf("SetDefault(zh-TW): Default = %q, want zh-TW", Default)
+	}
+	// Unknown locale: Default stays put rather than going blank.
+	SetDefault("fr")
+	if Default != LocaleZHTW {
+		t.Errorf("SetDefault(fr): Default = %q, want zh-TW (unchanged)", Default)
+	}
+	SetDefault("")
+	if Default != LocaleZHTW {
+		t.Errorf("SetDefault(\"\"): Default = %q, want zh-TW (unchanged)", Default)
+	}
+}
+
 func TestNormalize(t *testing.T) {
 	cases := []struct {
 		in   string

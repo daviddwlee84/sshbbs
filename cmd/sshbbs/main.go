@@ -16,6 +16,7 @@ import (
 
 	"github.com/daviddwlee84/sshbbs/internal/auth"
 	"github.com/daviddwlee84/sshbbs/internal/chat"
+	"github.com/daviddwlee84/sshbbs/internal/i18n"
 	"github.com/daviddwlee84/sshbbs/internal/notify"
 	"github.com/daviddwlee84/sshbbs/internal/seed"
 	"github.com/daviddwlee84/sshbbs/internal/server"
@@ -41,7 +42,23 @@ func main() {
 	hostkey := flag.String("hostkey", ".ssh/host_ed25519", "SSH host key path")
 	adminPassword := flag.String("admin-password", "",
 		"override admin password on first seed; empty uses the baked default 'admin' with must_change_password=1")
+	// Server-wide default locale. The flag's default value reads from
+	// BBS_LOCALE so `BBS_LOCALE=en make watch` works without touching
+	// the Makefile; an explicit -locale on the CLI overrides the env.
+	// Affects pre-login screens (register, password-change-on-first-
+	// login), the locale of newly-registered accounts, and fallback
+	// rendering. Existing users keep their stored users.locale.
+	locale := flag.String("locale", os.Getenv("BBS_LOCALE"),
+		"server-wide default locale (zh-TW or en); also via BBS_LOCALE env. New accounts inherit this; existing users keep their stored choice.")
 	flag.Parse()
+
+	if *locale != "" {
+		if !i18n.Valid(*locale) {
+			log.Fatalf("invalid -locale / BBS_LOCALE %q: must be one of zh-TW, en", *locale)
+		}
+		i18n.SetDefault(i18n.Locale(*locale))
+	}
+	log.Printf("default locale: %s", i18n.Default)
 
 	st, err := store.Open(*dbPath)
 	if err != nil {
